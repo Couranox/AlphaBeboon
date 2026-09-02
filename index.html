@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kingdom Strategy Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=MedievalSharp&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Load Three.js locally -->
+    <script src="three.min.js"></script>
+</head>
+<body>
+    <div id="wall-cost-tooltip" style="position: absolute; display: none; background: rgba(0,0,0,0.8); color: white; padding: 5px 10px; border-radius: 0 0 4px 4px; pointer-events: none; font-family: 'Outfit', sans-serif; font-size: 14px; z-index: 1000; font-weight: bold; text-shadow: 1px 1px 2px black;"></div>
+    <!-- Start Screen Overlay -->
+    <div id="start-screen" class="parchment-theme" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: rgba(0,0,0,0.8);">
+        <h1 style="color: #4a3c31; font-size: 4em; margin-bottom: 0.5em; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">Kingdom Strategy Pro</h1>
+        <div style="display: flex; gap: 20px;">
+            <button id="btn-test-mode" class="action-btn" style="padding: 20px 40px; font-size: 1.5em; cursor: pointer;">Play Test Mode</button>
+            <button id="btn-easy-mode" class="action-btn" style="padding: 20px 40px; font-size: 1.5em; cursor: pointer; background: linear-gradient(to bottom, #7db37d, #497a49); color: white;">Play Easy Mode</button>
+            <button id="btn-medium-mode" class="action-btn" style="padding: 20px 40px; font-size: 1.5em; cursor: pointer; background: linear-gradient(to bottom, #d68545, #a5611d); color: white;">Play Medium Mode</button>
+            <button id="btn-hard-mode" class="action-btn" style="padding: 20px 40px; font-size: 1.5em; cursor: pointer; background: linear-gradient(to bottom, #d64545, #a51d1d); color: white;">Play Hard Mode</button>
+        </div>
+    </div>
+    
+    <!-- Pause Menu Overlay -->
+    <div id="pause-menu" class="parchment-theme" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 900; display: none; flex-direction: column; justify-content: center; align-items: center; background-color: rgba(0,0,0,0.6);">
+        <div style="background-color: #f4e8d2; padding: 30px; border: 4px solid #8b5a2b; border-radius: 8px; max-width: 600px; max-height: 90vh; overflow-y: auto; text-align: center; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: #4a3c31; font-family: 'Cinzel', serif; font-size: 2em; margin: 0;">Game Paused</h2>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label for="volume-slider" style="font-family: 'Outfit', sans-serif; font-weight: bold; color: #4a3c31;">Music Volume:</label>
+                    <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.24" style="width: 100px; accent-color: #8b5a2b; cursor: pointer;">
+                </div>
+            </div>
+            <div style="text-align: left; margin-bottom: 25px; line-height: 1.6; font-family: 'Outfit', sans-serif;">
+                <h3 style="border-bottom: 2px solid #8b5a2b; padding-bottom: 5px; margin-bottom: 10px;">Camera Controls</h3>
+                <ul style="margin: 0; padding-left: 20px; margin-bottom: 15px;">
+                    <li><b>W, A, S, D / Arrow Keys</b>: Pan camera</li>
+                    <li><b>Q / E</b>: Rotate camera view</li>
+                    <li><b>Mouse Wheel</b>: Zoom in / out</li>
+                    <li><b>Spacebar (Tap)</b>: Toggle top-down vs angled view</li>
+                    <li><b>Spacebar (Hold) + Mouse Wheel</b>: Adjust camera pitch angle</li>
+                    <li><b>` (Backtick)</b>: Select King. Double-tap to focus camera.</li>
+                    <li><b>M, B, V, K</b>: Select Market, Barracks, Siege Shop, Keep. Double-tap to focus.</li>
+                </ul>
+                <h3 style="border-bottom: 2px solid #8b5a2b; padding-bottom: 5px; margin-bottom: 10px;">Unit Controls</h3>
+                <ul style="margin: 0; padding-left: 20px; margin-bottom: 15px;">
+                    <li><b>Left Click</b>: Select unit / building / confirm placement</li>
+                    <li><b>Double Left Click</b>: Select all of same kind on screen</li>
+                    <li><b>Left Click & Drag</b>: Box select Military</li>
+                    <li><b>Ctrl + Drag</b>: Box select Peasants</li>
+                    <li><b>Alt + Drag</b>: Box select Buildings</li>
+                    <li><b>Ctrl + Alt + Drag</b>: Box select all Mobile Units</li>
+                    <li><b>Right Click</b>: Move / Attack / Gather / Construct</li>
+                    <li><b>Right Click & Drag</b>: Custom formation movement</li>
+                    <li><b>X</b>: Stop selected units</li>
+                    <li><b>F</b>: Toggle Fight-Move (Attack-Move) mode</li>
+                    <li><b>G</b>: Toggle Attack Ground mode</li>
+                    <li><b>Esc</b>: Cancel placement / clear selection</li>
+                </ul>
+                <h3 style="border-bottom: 2px solid #8b5a2b; padding-bottom: 5px; margin-bottom: 10px;">Control Groups</h3>
+                <ul style="margin: 0; padding-left: 20px;">
+                    <li><b>Ctrl (or Alt) + [0-9]</b>: Save selected units to group</li>
+                    <li><b>Shift + [0-9]</b>: Add selected units to group</li>
+                    <li><b>[0-9]</b>: Select group (tap twice to focus camera)</li>
+                </ul>
+            </div>
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button id="btn-how-to-play" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #8b5a2b; color: white;">How to Play</button>
+                <button id="btn-buildings-list" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #5a8b2b; color: white;">Buildings Info</button>
+                <button id="btn-restart-menu" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #d32f2f; color: white;">Restart</button>
+                <button id="btn-resume" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #4caf50; color: white;">Resume Game</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- How to Play Manual -->
+    <div id="how-to-play-menu" class="parchment-theme" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 901; display: none; flex-direction: column; justify-content: center; align-items: center; background-color: rgba(0,0,0,0.8);">
+        <div style="background-color: #f4e8d2; padding: 30px; border: 4px solid #8b5a2b; border-radius: 8px; max-width: 700px; max-height: 90vh; overflow-y: auto; text-align: left; box-shadow: 0 0 20px rgba(0,0,0,0.5); font-family: 'Outfit', sans-serif;">
+            <h2 style="color: #4a3c31; font-family: 'Cinzel', serif; font-size: 2em; margin-bottom: 20px; text-align: center;">How to Play</h2>
+            
+            <h3 style="border-bottom: 2px solid #8b5a2b; padding-bottom: 5px; margin-bottom: 10px;">The Basics</h3>
+            <p style="margin-bottom: 15px;">Welcome to Kingdom Strategy Game! Your goal is to build a thriving economy, train a powerful military, and defeat the enemy while protecting your own Keep. You start with a Keep, some initial resources, and a few peasants to get your kingdom rolling.</p>
+
+            <h3 style="border-bottom: 2px solid #8b5a2b; padding-bottom: 5px; margin-bottom: 10px;">Economy & Gathering</h3>
+            <p style="margin-bottom: 10px;">Your peasants are the backbone of your empire. Left idle, they will wander around. Assign them to buildings by selecting a building and the peasants will automatically start working.</p>
+            <ul style="margin: 0; padding-left: 20px; margin-bottom: 20px;">
+                <li style="margin-bottom: 5px;"><b>Food:</b> Gathered from Farms. Used to feed your army and spawn new peasants at the Keep.</li>
+                <li style="margin-bottom: 5px;"><b>Premium Food:</b> Bakes in the Bakery from normal Food. Feeding this to your people grants extra Gold per unit consumed.</li>
+                <li style="margin-bottom: 5px;"><b>Wood:</b> Harvested by Woodcutters near trees. Crucial for building basic structures and ranged weapons.</li>
+                <li style="margin-bottom: 5px;"><b>Iron & Stone:</b> Mined by placing Mines over mineral deposits. Iron is needed for advanced weapons and armor.</li>
+                <li style="margin-bottom: 5px;"><b>Gold:</b> Earned from selling items at the Market or consuming Premium Food. Used to train soldiers and build advanced structures.</li>
+            </ul>
+
+            <h3 style="border-bottom: 2px solid #8b5a2b; padding-bottom: 5px; margin-bottom: 10px;">Military & Combat</h3>
+            <p style="margin-bottom: 10px;">To build an army, first construct a <b>Barracks</b> and various weaponsmiths (Fletcher for bows, Blacksmith for swords, Armorer for armor). Idle peasants will automatically deliver crafted weapons and armor to your Barracks.</p>
+            <p style="margin-bottom: 10px;">Once equipped with gear in the Barracks, you can spend Gold to train peasants into specific soldier types. Don't forget to build <b>Stables</b> to breed horses for cavalry units!</p>
+            <p style="margin-bottom: 20px;"><b>Defenses:</b> Protect your village by dragging walls. Walls can be elevated, and you can place Gatehouses to allow your units to pass through.</p>
+            
+            <h3 style="border-bottom: 2px solid #8b5a2b; padding-bottom: 5px; margin-bottom: 10px;">Logistics & Trade</h3>
+            <p style="margin-bottom: 10px;"><b>Loadhouses:</b> Used to transport large quantities of goods automatically using horse-drawn wagons. Perfect for moving resources from distant mines back to your Keep.</p>
+            <p style="margin-bottom: 25px;"><b>Markets:</b> Allow you to quickly buy and sell resources using Gold to balance your economy. Watch the prices to make a profit!</p>
+            
+            <p style="text-align: center; margin-top: 30px; font-style: italic; color: #5d4037; font-size: 1.1em;">This tutorial is AI generated and may suck, so figure it out noob.</p>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <button id="btn-close-how-to-play" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #8b5a2b; color: white;">Back</button>
+            </div>
+        </div>
+    </div>
+    <!-- Main Game Canvas Container -->
+    <div id="buildings-list-menu" class="parchment-theme" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 902; display: none; flex-direction: column; justify-content: center; align-items: center; background-color: rgba(0,0,0,0.8);">
+        <div style="background-color: #f4e8d2; padding: 30px; border: 4px solid #8b5a2b; border-radius: 8px; max-width: 800px; max-height: 90vh; overflow-y: auto; text-align: left; box-shadow: 0 0 20px rgba(0,0,0,0.5); font-family: 'Outfit', sans-serif;">
+            <h2 style="color: #4a3c31; font-family: 'Cinzel', serif; font-size: 2em; margin-bottom: 20px; text-align: center;">Building Directory</h2>
+            
+            <p style="margin-bottom: 20px; text-align: center; font-size: 1.1em;">A comprehensive guide to all structures you can build.</p>
+
+            <div id="buildings-list-content" style="text-align: left; max-height: 400px; overflow-y: auto; padding-right: 10px; display: flex; flex-direction: column; gap: 10px;">
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Keep:</strong> (Free.) Your central hub. Produces 1 Peasant every 8 seconds, up to 10 residents. Costs 10 food to spawn a Peasant.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>House:</strong> (10 Wood.) Produces 1 Peasant every 8 seconds, up to 10 residents per house. Costs 10 food to spawn a Peasant.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Farm:</strong> (10 Wood, 1 Peasant.) Grows and harvests Food automatically over time.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Woodcutter:</strong> (5 Wood, 1 Peasant.) Harvests Wood from nearby trees.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Mine:</strong> (10 Wood, up to 3 Peasants.) Must be placed on ore deposits to gather Iron or Stone.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Barracks:</strong> (10 Stone.) Stores crafted weapons/armor and trains idle peasants into soldiers using Gold.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Poleturner:</strong> (10 Wood, 100 Gold, 1 Peasant.) Produces Spears and Pikes. Spears (5 wood / 5s) or Pikes (10 wood / 10s).</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Gruntshop:</strong> (20 Wood, 100 Gold, 1 Peasant.) Produces Axes and Halberds. Axes (5 iron / 5s) or Halberds (10 wood, 5 iron / 15s).</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Blacksmith:</strong> (20 Wood, 200 Gold, 1 Peasant.) Produces Swords and Maces. Swords (10 iron / 10s) or Maces (10 iron / 10s).</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Fletcher:</strong> (20 Wood, 100 Gold, 1 Peasant.) Produces Shortbows and Longbows. Shortbows (10 wood / 10s) or Longbows (15 wood / 15s).</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Knight Arms:</strong> (20 Wood, 200 Gold, 1 Peasant.) Produces Poleaxes and Crossbows. Poleaxes (5 wood, 15 iron / 20s) or Crossbows (10 wood, 10 iron / 20s).</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Tailor:</strong> (10 Wood, 100 Gold, 1 Peasant.) Produces Cloth Armor and Leather Armor. Cloth Armor (5 food / 5s) or Leather Armor (10 food / 10s).</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Armorer:</strong> (20 Wood, 200 Gold, 1 Peasant.) Produces Chainmail and Plate Armor. Chainmail (5 iron / 5s) or Plate Armor (10 iron / 10s).</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Stables:</strong> (20 Wood, 10 Gold, 1 Peasant.) Breeds Horses (20 food / 20s) for your cavalry units.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Market:</strong> (20 Wood, 10 Gold.) Allows instantaneous buying and selling of resources for Gold.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Siege Shop:</strong> (15 Wood, 5 Iron, 100 Gold.) Trains idle peasants directly into Siege Weapons.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Loadhouse:</strong> (20 Wood.) Dispatches horse-drawn wagons to automatically collect resources from distant camps.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Baker:</strong> (20 Wood, 1 Peasant.) Converts 10 Food into 20 Premium Food (20s). Peasants will eat Premium Food instead of normal Food if they can, and will pay 1 gold per Premium Food consumed.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Brewery:</strong> (20 Wood, 100 Gold, 1 Peasant.) Converts 10 Food into Brew (20s). Brews sell for 40, buy for 80, and give 41 gold when consumed by population.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Carpenter:</strong> (20 Wood, 1 Peasant.) Converts 20 Wood into Furniture (20s). Furniture sells for 60, buys for 120, and gives 61 gold when consumed by population.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Jeweler:</strong> (20 Wood, 200 Gold, 1 Peasant.) Converts 20 Stone into 1 Gem (20s). Gems sell for 120, buy for 240, and give 121 gold when consumed by population.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Wall:</strong> (1 Stone.) Drag to place defensive walls. Units can stand on top for range and defense bonuses.</p>
+                </div>
+                <div style="background: rgba(139, 90, 43, 0.1); padding: 15px; border-left: 4px solid #8b5a2b;">
+                    <p style="margin: 0; font-size: 0.95em;"><strong>Gatehouse:</strong> (2 Stone.) Place Gatehouses to allow units through.</p>
+                </div>
+            </div>
+            
+            <p style="text-align: center; margin-top: 30px; font-style: italic; color: #5d4037; font-size: 1.1em;">This List was AI generated and may be bs, figure it out noob.</p>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <button id="btn-close-buildings-list" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #8b5a2b; color: white;">Back</button>
+            </div>
+        </div>
+    </div>
+    <div id="game-container" tabindex="0"></div>
+
+    <!-- UI Overlay: Resource and Population Bar -->
+    <div id="top-bar" class="parchment-theme">
+        <canvas id="minimap" width="220" height="220" style="position: absolute; top: calc(100% + 4px); left: 0; width: 220px; height: 220px; background: rgba(0,0,0,0.6); border: 4px solid #4e342e; border-top: none; left: -4px; border-radius: 0 0 4px 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.5); z-index: 10;"></canvas>
+        <button id="btn-menu" class="action-btn" style="padding: 5px 15px; margin-right: 5px; font-weight: bold; cursor: pointer;">Menu</button>
+        <div class="stat-box" style="margin-right: 10px; padding: 4px 10px; min-width: 65px; text-align: center;">
+            <span id="game-timer" class="stat-value" style="font-size: 1.1em; font-weight: bold; font-variant-numeric: tabular-nums;">00:00</span>
+        </div>
+        
+        <div class="inventory-status-trigger" id="keep-inv-trigger" style="margin-right: 15px;">
+            
+            🏰 <div class="global-inv-tooltip" id="keep-inv-tooltip">
+                <strong>Keep Inventory:</strong>
+                <div id="keep-inv-list">None</div>
+            </div>
+        </div>
+        
+        <div class="resource-container" style="flex: 1; justify-content: flex-start; gap: 8px;">
+            <div class="res-box" title="Gold (Used for training units)"> <span style="font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;">🪙</span> <span id="res-gold">100</span>g</div>
+            <div class="res-box" id="food-container" title="Food / Premium Food (Eat for +1 Gold)"> <span style="font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;">🌾</span> <span id="res-food">100</span> / <span id="res-premium_food" style="color: #4caf50;">0</span></div>
+            <div class="res-box" title="Wood (Used for building and bows)"> <span style="font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;">🪵</span> <span id="res-wood">100</span></div>
+            <div class="res-box" title="Stone (Used for mines/structures)"> <span style="font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;">🪨</span> <span id="res-stone">100</span></div>
+            <div class="res-box" title="Iron (Used for smithing weapons/armors)"> <span style="font-family: 'Segoe UI Emoji', 'Apple Color Emoji', sans-serif;">⛓️</span> <span id="res-iron">100</span></div>
+        </div>
+        
+        <div class="inventory-status-trigger" id="pop-trigger" style="margin-left: 10px;">
+             👥 <span id="player-pop">0 / 0</span>
+            <div class="global-inv-tooltip" id="pop-tooltip">
+                <strong>Population Breakdown:</strong>
+                <div>Total Peasants (No Army): <span id="pop-total-peasants">0</span></div>
+                <div>Total Army: <span id="pop-total-army">0</span></div>
+                <div>Idle Peasants: <span id="pop-idle-peasants">0</span></div>
+                <div>Working/Assigned: <span id="pop-working-peasants">0</span></div>
+                <div>Constructing: <span id="pop-constructing-peasants">0</span></div>
+            </div>
+        </div>
+
+        <div class="inventory-status-trigger" id="idle-trigger" style="margin-left: 10px; cursor: default;">
+            💤 Idle: <span id="player-idle">0</span>
+        </div>
+
+        <div class="inventory-status-trigger" id="horses-trigger" style="margin-left: 10px;">
+             🐎 <span id="player-horses">0 / 0</span>
+            <div class="global-inv-tooltip" id="horses-tooltip">
+                <strong>Horse Distribution:</strong>
+                <div>In Stables (Ready): <span id="horses-stables">0</span></div>
+                <div>In Economy (Wagons): <span id="horses-eco">0</span></div>
+                <div>In Army (Cavalry): <span id="horses-army">0</span></div>
+            </div>
+        </div>
+
+        <div class="inventory-status-trigger" id="army-trigger" style="margin-left: 10px;"> <span style="font-family: \'Segoe UI Emoji\', \'Apple Color Emoji\', sans-serif;">&#x2694;&#xFE0F;</span> <span id="player-military">0</span>
+            <div class="global-inv-tooltip" id="army-tooltip">
+                <strong>Military Breakdown:</strong>
+                <div id="army-breakdown-list">None</div>
+                <hr>
+                <strong>Siege Pilots (Engineers):</strong>
+                <div id="army-siege-pilots">0</div>
+                <hr>
+                <strong>Siege Engines:</strong>
+                <div id="army-siege-list">None</div>
+            </div>
+        </div>
+
+        <div class="inventory-status-trigger" id="siege-trigger" style="margin-left: 10px;">
+            🔧 <span id="player-siege">0</span>
+            <div class="global-inv-tooltip" id="siege-tooltip">
+                <strong>Siege Engines:</strong>
+                <div id="siege-breakdown-list">None</div>
+            </div>
+        </div>
+
+        <div class="inventory-status-trigger" id="global-inv-trigger" style="margin-left: 10px;">
+            🛡️ <div class="global-inv-tooltip" id="global-inv-tooltip">
+                <strong>Barracks Weapons:</strong>
+                <div>Spear: <span id="inv-Spear">0</span> | Pike: <span id="inv-Pike">0</span></div>
+                <div>Halberd: <span id="inv-Halberd">0</span> | Poleaxe: <span id="inv-Poleaxe">0</span></div>
+                <div>Axe: <span id="inv-Axe">0</span> | Sword: <span id="inv-Sword">0</span> | Mace: <span id="inv-Mace">0</span></div>
+                <div>Short Bow: <span id="inv-ShortBow">0</span> | Longbow: <span id="inv-Longbow">0</span></div>
+                <div>Crossbow: <span id="inv-Crossbow">0</span></div>
+                <hr>
+                <strong>Barracks Armors:</strong>
+                <div>Cloth: <span id="inv-cloth">0</span> | Leather: <span id="inv-leather">0</span></div>
+                <div>Chain: <span id="inv-chain">0</span> | Plate: <span id="inv-plate">0</span></div>
+            </div>
+        </div>
+
+        <div class="stat-box align-right">
+            <span id="game-status-text" class="status-normal">Defend your King!</span>
+        </div>
+    </div>
+
+    <!-- Selection Drag Box Overlay -->
+    <div id="drag-box" style="display: none;"></div>
+
+    <!-- HUD Control Panel at the Bottom -->
+    <div id="hud-panel" class="parchment-theme">
+        <!-- Left: Selection Info and Status -->
+        <div id="selection-panel" class="hud-subpanel">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #5d4037; padding-bottom: 5px; margin-bottom: 10px;">
+                <h3 id="selection-title" style="margin: 0; border: none; padding: 0;">No Selection</h3>
+                <div style="display: flex; gap: 4px; align-items: center;">
+                    <div id="aggro-controls" style="display: none; gap: 4px; align-items: center;">
+                        <button id="btn-toggle-mount" onclick="toggleMount()" class="wood-btn" style="padding: 2px; width: 22px; height: 22px; font-size: 14px; margin: 0; min-height: unset; display: none; align-items: center; justify-content: center; line-height: 1;" title="Toggle Mount">&#x1F40E;</button>
+                        <button id="btn-toggle-aggro" onclick="toggleAggro()" class="wood-btn" style="padding: 2px; width: 22px; height: 22px; font-size: 14px; margin: 0; min-height: unset; display: flex; align-items: center; justify-content: center; line-height: 1;" title="Toggle Aggro">&#x1F610;</button>
+                        <button id="btn-reset-aggro" onclick="resetAggro()" class="wood-btn" style="padding: 2px; width: 22px; height: 22px; font-size: 12px; margin: 0; min-height: unset; display: flex; align-items: center; justify-content: center; line-height: 1;" title="Reset Default Aggro">&#x1F504;</button>
+                    </div>
+                    <button id="btn-attack-ground" class="wood-btn" style="display: none; padding: 2px; width: 22px; height: 22px; font-size: 14px; margin: 0; min-height: unset; align-items: center; justify-content: center; line-height: 1;" title="Attack Ground [G]">&#x1F3AF;</button>
+                    <div id="zzz-controls" style="display: none; gap: 4px; align-items: center;">
+                        <button id="btn-toggle-zzz" onpointerdown="toggleZzz()" class="wood-btn" style="padding: 2px; width: 28px; height: 22px; font-size: 10px; margin: 0; min-height: unset; display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: bold;" title="Toggle Building State (ON/OFF)">ON</button>
+                    </div>
+                </div>
+            </div>
+            <div id="selection-details">
+                <p class="placeholder-text">Select a unit or building to view details.</p>
+            </div>
+        </div>
+
+        <!-- Center: Action & Building Panel -->
+        <div id="action-panel" class="hud-subpanel">
+            <div class="action-header" style="align-items: center;">
+                <div style="display: flex; align-items: baseline; gap: 10px;">
+                    <h3>Actions & Construction</h3>
+                    <span id="market-fine-print" style="display: none; font-size:10px; color:#5d4037; font-style:italic;"></span>
+                </div>
+                
+                <!-- Default Tabs -->
+                <div class="hud-tabs" id="default-header-tabs">
+                    <button id="tab-civilian" class="tab-btn active">Civilian</button>
+                    <button id="tab-luxuries" class="tab-btn">Luxuries</button>
+                    <button id="tab-military" class="tab-btn">Military</button>
+                    <button id="tab-walls" class="tab-btn">Walls</button>
+                    <button id="tab-demolish" class="tab-btn" style="background-color: #d32f2f; color: white;">Demolish</button>
+                    <button id="btn-undo" class="tab-btn" style="background-color: #ffa000; color: white;" title="Undo last blueprint">Undo</button>
+                </div>
+                
+                <!-- Barracks Header Controls -->
+                <div id="barracks-header-controls" style="display: none; align-items: center; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 5px; border: 1px solid #c62828; padding: 2px 5px; border-radius: 3px; background: rgba(198,40,40,0.1);">
+                        <span style="color: #c62828; font-weight: bold; font-size: 14px;">Que: (<span id="barracks-queue-count">0</span>)</span>
+                        <button id="btn-cancel-military-queue" class="wood-btn" style="padding: 2px 6px; font-size: 10px; background: #d32f2f; color: white; min-width: auto; height: auto;">CANCEL</button>
+                    </div>
+                    <div id="barracks-armor-controls" style="display: flex; align-items: center; gap: 15px;">
+<button id="btn-armor-lock" onclick="toggleArmorLock()" class="wood-btn" style="padding: 2px 6px; font-size: 14px; min-width: auto; height: auto;" title="Toggle Strict Armor Requirement">&#x1F513;</button>
+                    <label style="color: #3e2723; font-weight: bold; margin-bottom: 0;">Equip Armor & Mount:</label>
+                    <div class="checkbox-group" style="display: flex; gap: 10px;">
+                        <label class="checkbox-container"><input type="checkbox" id="chk-cloth"> Cloth (<span id="stock-cloth">0</span>)<span class="checkmark"></span></label>
+                        <label class="checkbox-container"><input type="checkbox" id="chk-leather"> Leather (<span id="stock-leather">0</span>)<span class="checkmark"></span></label>
+                        <label class="checkbox-container"><input type="checkbox" id="chk-chain"> Chain (<span id="stock-chain">0</span>)<span class="checkmark"></span></label>
+                        <label class="checkbox-container"><input type="checkbox" id="chk-plate"> Plate (<span id="stock-plate">0</span>)<span class="checkmark"></span></label>
+                        <label class="checkbox-container"><input type="checkbox" id="chk-horse"> Horse (<span id="stock-horse">0</span>)<span class="checkmark"></span></label>
+                    </div>
+</div>
+                </div>
+                
+                <!-- Siege Shop Header Controls -->
+                <div id="siegeshop-header-controls" style="display: none; align-items: center; gap: 15px;">
+                    <div style="display: flex; align-items: center; gap: 5px; border: 1px solid #c62828; padding: 2px 5px; border-radius: 3px; background: rgba(198,40,40,0.1);">
+                        <span style="color: #c62828; font-weight: bold; font-size: 14px;">Que: (<span id="siege-queue-count">0</span>)</span>
+                        <button id="btn-cancel-siege-queue" class="wood-btn" style="padding: 2px 6px; font-size: 10px; background: #d32f2f; color: white; min-width: auto; height: auto;">CANCEL</button>
+                    </div>
+                </div>                
+                <!-- Market Header Controls -->
+                <div id="market-header-controls" class="hud-tabs" style="display: none; margin: 0;">
+                    <button id="tab-market-resources" class="tab-btn active" onclick="setMarketTab('resources')">Resources</button>
+                    <button id="tab-market-luxuries" class="tab-btn" onclick="setMarketTab('luxuries')">Luxuries</button>
+                    <button id="tab-market-weapons" class="tab-btn" onclick="setMarketTab('weapons')">Weapons</button>
+                    <button id="tab-market-armor" class="tab-btn" onclick="setMarketTab('armor')">Armor</button>
+                </div>
+            </div>
+            
+            <!-- Civilian Buildings Group -->
+            <div id="group-civilian" class="action-buttons-scroll">
+                <button id="btn-build-house" class="wood-btn" title="Cost: 10 Wood. Spawns peasants.">
+                    <span class="btn-icon">🏠</span>
+                    <span class="btn-text">House</span>
+                </button>
+                <button id="btn-build-farm" class="wood-btn" title="Cost: 10 Wood. Farm Food (needs Fertile Land).">
+                    <span class="btn-icon">🌾</span>
+                    <span class="btn-text">Farm</span>
+                </button>
+                <button id="btn-build-woodcutter" class="wood-btn" title="Cost: 5 Wood. Harvest nearby trees.">
+                    <span class="btn-icon">🪵</span>
+                    <span class="btn-text">Woodcutter</span>
+                </button>
+                <button id="btn-build-mine" class="wood-btn" title="Cost: 10 Wood. Mine Gold/Iron/Stone (needs deposit).">
+                    <span class="btn-icon">⛏️</span>
+                    <span class="btn-text">Mine</span>
+                </button>
+                <button id="btn-build-loadhouse" class="wood-btn" title="Cost: 20 Wood. Logistics wagon.">
+                    <span class="btn-icon">📦</span>
+                    <span class="btn-text">Loadhouse</span>
+                </button>
+                <button id="btn-build-stables" class="wood-btn" title="Cost: 20 Wood, 10 Gold. Breeds horses.">
+                    <span class="btn-icon">🐴</span>
+                    <span class="btn-text">Stables</span>
+                </button>
+                <button id="btn-build-market" class="wood-btn" title="Cost: 20 Wood, 10 Gold. Trade resources.">
+                    <span class="btn-icon">⚖️</span>
+                    <span class="btn-text">Market</span>
+                </button>
+            </div>
+
+            <!-- Military Buildings Group -->
+            <div id="group-military" class="action-buttons-scroll" style="display: none;">
+                <button id="btn-build-barracks" class="wood-btn" title="Cost: 10 Stone. Train soldiers.">
+                    <span class="btn-icon">🛡️</span>
+                    <span class="btn-text">Barracks</span>
+                </button>
+                <button id="btn-build-mercenary_post" class="wood-btn" title="Cost: 20 Wood, 100 Gold. Hire Mercenaries.">
+                    <span class="btn-icon">💰</span>
+                    <span class="btn-text">Mercenary Post</span>
+                </button>
+                <button id="btn-build-siegeshop" class="wood-btn" title="Cost: 15 Wood, 5 Iron, 100 Gold. Train siege units.">
+                    <span class="btn-icon">🔧</span>
+                    <span class="btn-text">Siege Shop</span>
+                </button>
+                <button id="btn-build-poleturner" class="wood-btn" title="Cost: 10 Wood, 100 Gold. Makes Spears & Pikes.">
+                    <span class="btn-icon">🎋</span>
+                    <span class="btn-text">Poleturner</span>
+                </button>
+                <button id="btn-build-gruntshop" class="wood-btn" title="Cost: 20 Wood, 100 Gold. Makes Axes & Halberds.">
+                    <span class="btn-icon">🪓</span>
+                    <span class="btn-text">Gruntshop</span>
+                </button>
+                <button id="btn-build-blacksmith" class="wood-btn" title="Cost: 20 Wood, 200 Gold. Makes Swords & Maces.">
+                    <span class="btn-icon">⚒️</span>
+                    <span class="btn-text">Blacksmith</span>
+                </button>
+                <button id="btn-build-knightarms" class="wood-btn" title="Cost: 20 Wood, 200 Gold. Makes Poleaxes & Crossbows.">
+                    <span class="btn-icon">&#x269C;&#xFE0F;</span>
+                    <span class="btn-text">Knight Arms</span>
+                </button>
+                <button id="btn-build-fletcher" class="wood-btn" title="Cost: 20 Wood, 100 Gold. Makes Bows.">
+                    <span class="btn-icon">🏹</span>
+                    <span class="btn-text">Fletcher</span>
+                </button>
+                <button id="btn-build-tailor" class="wood-btn" title="Cost: 10 Wood, 100 Gold. Makes Cloth & Leather armors.">
+                    <span class="btn-icon">🧵</span>
+                    <span class="btn-text">Tailor</span>
+                </button>
+                <button id="btn-build-armorer" class="wood-btn" title="Cost: 20 Wood, 200 Gold. Makes Chain & Plate armors.">
+                    <span class="btn-icon">🥋</span>
+                    <span class="btn-text">Armorer</span>
+                </button>
+            </div>
+
+            <!-- Walls Group -->
+            <div id="group-walls" class="action-buttons-scroll" style="display: none; padding-right: 5px; flex-direction: row; gap: 10px;">
+                <style>#group-walls .wood-btn { width: 68px; padding: 4px; }</style>
+                <!-- Tools (Left Column) -->
+                <div style="display: flex; flex-wrap: wrap; gap: 5px; flex-grow: 1; align-content: flex-start;">
+                    <button id="btn-tool-freehand" class="wood-btn active-prod" title="Draw walls freehand"><span class="btn-icon">🌊</span><span class="btn-text">Freehand</span></button>
+                    <button id="btn-tool-line" class="wood-btn" title="Draw straight lines"><span class="btn-icon">📏</span><span class="btn-text">Line</span></button>
+                    <button id="btn-tool-box" class="wood-btn" title="Draw box shapes"><span class="btn-icon">🔲</span><span class="btn-text">Box</span></button>
+                    <button id="btn-tool-circle" class="wood-btn" title="Draw circular shapes"><span class="btn-icon">⭕</span><span class="btn-text">Circle</span></button>
+                    <button id="btn-tool-ramp" class="wood-btn" title="Draw ramps/stairs"><span class="btn-icon">📉</span><span class="btn-text">Ramp</span></button>
+                    <button id="btn-build-gatehouse" class="wood-btn" title="Drag to draw gatehouse. (Cost: 2 Stone/vol)"><span class="btn-icon">🚪</span><span class="btn-text">Gate</span></button>
+                    <button id="btn-build-tower" class="wood-btn" title="Click or drag to draw tower. (Cost: 2 Stone/vol)"><span class="btn-icon">🗼</span><span class="btn-text">Tower</span></button>
+                    <button id="btn-tool-delete" class="wood-btn" style="border-color: #d32f2f;" title="Drag to delete units/buildings (100% refund planned, 50% built)"><span class="btn-icon">💣</span><span class="btn-text" style="color: #d32f2f;">Delete</span></button>
+                </div>
+                
+                <!-- Options (Middle Column) -->
+                <div style="display: flex; flex-direction: column; gap: 5px; padding: 5px; background: rgba(0,0,0,0.05); border-radius: 0 0 4px 4px; border: 1px solid rgba(0,0,0,0.1); flex-shrink: 0; min-width: 100px;">
+                    <div style="font-weight: bold; font-size: 10px; color: #3e2723; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 2px; margin-bottom: 2px;">MATERIAL</div>
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer;">
+                        <input type="radio" name="wall-material" value="stone" checked> Stone
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer;">
+                        <input type="radio" name="wall-material" value="wood"> Wood
+                    </label>
+                    <div style="font-weight: bold; font-size: 10px; color: #3e2723; border-bottom: 1px solid rgba(0,0,0,0.1); padding-bottom: 2px; margin-bottom: 2px; margin-top: 5px;">STYLE</div>
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer;">
+                        <input type="checkbox" id="chk-wall-crenulated"> Crenulated
+                    </label>
+                </div>
+
+                <!-- Sliders (Right Column) -->
+                <div style="display: flex; flex-direction: row; gap: 15px; flex-shrink: 0; align-items: flex-end; justify-content: flex-end; padding-bottom: 5px;">
+                    
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                        <span id="lbl-wall-thickness" style="font-size: 12px; font-weight: bold;">1</span>
+                        <input type="range" id="wall-thickness" min="1" max="10" value="1" style="writing-mode: vertical-lr; direction: rtl; width: 20px; height: 45px;">
+                        <label for="wall-thickness" style="font-size: 10px; color: #3e2723; font-weight: bold;">Thick</label>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                        <span id="lbl-wall-height" style="font-size: 12px; font-weight: bold;">3</span>
+                        <input type="range" id="wall-height" min="0" max="10" value="3" style="writing-mode: vertical-lr; direction: rtl; width: 20px; height: 45px;">
+                        <label for="wall-height" style="font-size: 10px; color: #3e2723; font-weight: bold;">Height</label>
+                    </div>
+                    
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
+                        <span id="lbl-wall-slope" style="font-size: 12px; font-weight: bold;">-45</span>
+                        <input type="range" id="wall-slope" min="-45" max="-5" value="-45" step="5" style="writing-mode: vertical-lr; direction: rtl; width: 20px; height: 45px;">
+                        <label for="wall-slope" style="font-size: 10px; color: #3e2723; font-weight: bold;">Slope</label>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Luxuries Buildings Group -->
+            <div id="group-luxuries" class="action-buttons-scroll" style="display: none;">
+                <button id="btn-build-bakery" class="wood-btn" title="Cost: 20 Wood. Bakes premium food.">
+                    <span class="btn-icon">🥖</span>
+                    <span class="btn-text">Bakery</span>
+                </button>
+                <button id="btn-build-brewery" class="wood-btn" title="Cost: 20 Wood. Brews ale.">
+                    <span class="btn-icon">🍻</span>
+                    <span class="btn-text">Brewery</span>
+                </button>
+                <button id="btn-build-carpenter" class="wood-btn" title="Cost: 20 Wood. Crafts furniture.">
+                    <span class="btn-icon">🪑</span>
+                    <span class="btn-text">Carpenter</span>
+                </button>
+                <button id="btn-build-jeweler" class="wood-btn" title="Cost: 20 Wood, 200 Gold. Crafts gems.">
+                    <span class="btn-icon">💎</span>
+                    <span class="btn-text">Jeweler</span>
+                </button>
+            </div>
+
+            <!-- Multi Selection Group -->
+            <div id="group-multi-units" class="action-buttons-scroll" style="display: none; gap: 4px;">
+            </div>
+
+            <div id="group-barracks-training" class="action-buttons-scroll" style="display: none; gap: 4px;">
+                <!-- Poleturner -->
+                <button id="btn-train-Spear" class="wood-btn barracks-train-btn" title="Train Spearman (Spear, 10g)">
+                    <div class="train-price">10</div>
+                    <div class="train-label">Spear</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon" viewBox="0 0 24 24"><line x1="4" y1="20" x2="18" y2="6" stroke="#8d6e63" stroke-width="2" stroke-linecap="round"/><polygon points="17,7 22,2 17,11" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/></svg>
+                        <span class="shop-badge" title="Poleturner" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x1FAB5;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Spear" class="stock-num" title="In Stock">0</span><span id="queue-Spear" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Pike" class="wood-btn barracks-train-btn" title="Train Pikeman (Pike, 15g)">
+                    <div class="train-price">15</div>
+                    <div class="train-label">Pike</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon" viewBox="0 0 24 24"><line x1="2" y1="22" x2="20" y2="4" stroke="#8d6e63" stroke-width="2" stroke-linecap="round"/><polygon points="19,5 23,1 19,9" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/></svg>
+                        <span class="shop-badge" title="Poleturner" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x1FAB5;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Pike" class="stock-num" title="In Stock">0</span><span id="queue-Pike" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <!-- Gruntshop -->
+                <button id="btn-train-Axe" class="wood-btn barracks-train-btn" title="Train Axeman (Axe, 10g)">
+                    <div class="train-price">10</div>
+                    <div class="train-label">Axe</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1FA93;</span>
+                        <span class="shop-badge" title="Gruntshop" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x1FA93;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Axe" class="stock-num" title="In Stock">0</span><span id="queue-Axe" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Halberd" class="wood-btn barracks-train-btn" title="Train Halberdier (Halberd, 20g)">
+                    <div class="train-price">20</div>
+                    <div class="train-label">Halberd</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon" viewBox="0 0 24 24"><line x1="5" y1="21" x2="14" y2="8" stroke="#8d6e63" stroke-width="2" stroke-linecap="round"/><polygon points="13,9 21,1 15,11" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/><path d="M12,7 Q8,6 10,12 Q14,11 12,7 Z" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/><polygon points="14,10 18,13 15,14" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/></svg>
+                        <span class="shop-badge" title="Gruntshop" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x1FA93;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Halberd" class="stock-num" title="In Stock">0</span><span id="queue-Halberd" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <!-- Blacksmith -->
+                <button id="btn-train-Sword" class="wood-btn barracks-train-btn" title="Train Swordsman (Sword, 15g)">
+                    <div class="train-price">15</div>
+                    <div class="train-label">Sword</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon" viewBox="0 0 24 24"><line x1="5" y1="19" x2="9" y2="15" stroke="#5d4037" stroke-width="2" stroke-linecap="round"/><line x1="6" y1="14" x2="10" y2="18" stroke="#fbc02d" stroke-width="2" stroke-linecap="round"/><polygon points="9,15 21,3 15,9" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/></svg>
+                        <span class="shop-badge" title="Blacksmith" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x2692;&#xFE0F;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Sword" class="stock-num" title="In Stock">0</span><span id="queue-Sword" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Mace" class="wood-btn barracks-train-btn" title="Train Maceman (Mace, 10g)">
+                    <div class="train-price">10</div>
+                    <div class="train-label">Mace</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon" viewBox="0 0 24 24"><line x1="6" y1="22" x2="16" y2="12" stroke="#8d6e63" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="12" r="3.5" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/><polygon points="16,8.5 17,6 15,6" fill="#cfd8dc"/><polygon points="16,15.5 17,18 15,18" fill="#cfd8dc"/><polygon points="19.5,12 22,11 22,13" fill="#cfd8dc"/><polygon points="12.5,12 10,11 10,13" fill="#cfd8dc"/><polygon points="18.5,9.5 21,7 19.5,7" fill="#cfd8dc"/></svg>
+                        <span class="shop-badge" title="Blacksmith" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x2692;&#xFE0F;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Mace" class="stock-num" title="In Stock">0</span><span id="queue-Mace" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <!-- Knight Arms -->
+                <button id="btn-train-Poleaxe" class="wood-btn barracks-train-btn" title="Train Poleaxe Guard (Poleaxe, 25g)">
+                    <div class="train-price">25</div>
+                    <div class="train-label">Poleaxe</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon" viewBox="0 0 24 24"><line x1="5" y1="21" x2="14" y2="8" stroke="#8d6e63" stroke-width="2" stroke-linecap="round"/><polygon points="13,9 18,3 15,11" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/><path d="M12,7 Q8,6 10,12 Q14,11 12,7 Z" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/><rect x="14" y="8" width="3" height="4" transform="rotate(45 14 8)" fill="#cfd8dc" stroke="#90a4ae" stroke-width="0.5"/></svg>
+                        <span class="shop-badge" title="Knight Arms" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x269C;&#xFE0F;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Poleaxe" class="stock-num" title="In Stock">0</span><span id="queue-Poleaxe" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Crossbow" class="wood-btn barracks-train-btn" title="Train Crossbowman (Crossbow, 10g)">
+                    <div class="train-price">10</div>
+                    <div class="train-label">Crossbow</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="6" stroke="#5d4037" stroke-width="3" stroke-linecap="round"/><path d="M4,10 Q12,6 20,10" fill="none" stroke="#8d6e63" stroke-width="2"/><line x1="4" y1="10" x2="12" y2="14" stroke="#90a4ae" stroke-width="1"/><line x1="20" y1="10" x2="12" y2="14" stroke="#90a4ae" stroke-width="1"/><line x1="12" y1="14" x2="12" y2="2" stroke="#cfd8dc" stroke-width="2"/><polygon points="12,2 10,6 14,6" fill="#cfd8dc"/></svg>
+                        <span class="shop-badge" title="Knight Arms" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x269C;&#xFE0F;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Crossbow" class="stock-num" title="In Stock">0</span><span id="queue-Crossbow" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <!-- Fletcher -->
+                <button id="btn-train-ShortBow" class="wood-btn barracks-train-btn" title="Train Short Bow Archer (Short Bow, 25g)">
+                    <div class="train-price">25</div>
+                    <div class="train-label">Short Bow</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon" viewBox="0 0 24 24"><path d="M16,3 Q20,12 16,21" fill="none" stroke="#8d6e63" stroke-width="2.5" stroke-linecap="round"/><polyline points="16,3 8,12 16,21" fill="none" stroke="#90a4ae" stroke-width="1"/><line x1="4" y1="12" x2="22" y2="12" stroke="#cfd8dc" stroke-width="2"/><polygon points="22,12 18,10 18,14" fill="#cfd8dc"/></svg>
+                        <span class="shop-badge" title="Fletcher" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x1F3F9;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-ShortBow" class="stock-num" title="In Stock">0</span><span id="queue-ShortBow" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Longbow" class="wood-btn barracks-train-btn" title="Train Longbowman (Longbow, 35g)">
+                    <div class="train-price">35</div>
+                    <div class="train-label">Longbow</div>
+                    <div class="train-icons">
+                        <svg class="weapon-icon-large" viewBox="0 0 24 24" style="margin-top: -2px; margin-bottom: -2px;"><path d="M16,1 Q22,12 16,23" fill="none" stroke="#8d6e63" stroke-width="3" stroke-linecap="round"/><polyline points="16,1 6,12 16,23" fill="none" stroke="#90a4ae" stroke-width="1"/><line x1="2" y1="12" x2="24" y2="12" stroke="#cfd8dc" stroke-width="2.5"/><polygon points="24,12 19,9 19,15" fill="#cfd8dc"/></svg>
+                        <span class="shop-badge" title="Fletcher" style="font-family: 'Segoe UI Emoji', sans-serif;">&#x1F3F9;</span>
+                    </div>
+                    <div class="train-numbers"><span id="stock-Longbow" class="stock-num" title="In Stock">0</span><span id="queue-Longbow" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+            </div>
+
+            <div id="group-mercenary-training" class="action-buttons-scroll" style="display: none; gap: 4px;">
+                <button id="btn-train-Grunt" class="wood-btn barracks-train-btn" title="Train Grunt (30g, 1 peasant)">
+                    <div class="train-price">30</div>
+                    <div class="train-label">Grunt</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1FA96;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Grunt" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Slinger" class="wood-btn barracks-train-btn" title="Train Slinger (75g, 1 peasant)">
+                    <div class="train-price">75</div>
+                    <div class="train-label">Slinger</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1FAA2;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Slinger" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Spy" class="wood-btn barracks-train-btn" title="Train Spy (100g, 1 peasant)">
+                    <div class="train-price">100</div>
+                    <div class="train-label">Spy</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F575;&#xFE0F;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Spy" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Thug" class="wood-btn barracks-train-btn" title="Train Thug (177g, 1 peasant)">
+                    <div class="train-price">177</div>
+                    <div class="train-label">Thug</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F576;&#xFE0F;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Thug" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Brute" class="wood-btn barracks-train-btn" title="Train Brute (400g, 1 peasant)">
+                    <div class="train-price">400</div>
+                    <div class="train-label">Brute</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F98D;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Brute" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Assassin" class="wood-btn barracks-train-btn" title="Train Assassin (500g, 1 peasant)">
+                    <div class="train-price">500</div>
+                    <div class="train-label">Assassin</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F977;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Assassin" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Doppelsoldner" class="wood-btn barracks-train-btn" title="Train Doppelsoldner (1000g, 1 peasant)">
+                    <div class="train-price">1000</div>
+                    <div class="train-label" style="font-size: 8px; line-height: 1;">Doppel-<br>soldner</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F480;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Doppelsoldner" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-RoyalKnight" class="wood-btn barracks-train-btn" title="Train Royal Knight (1777g, 1 peasant)">
+                    <div class="train-price">1777</div>
+                    <div class="train-label" style="font-size: 9px; line-height: 1;">Royal<br>Knight</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F451;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-RoyalKnight" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+            </div>
+
+            <div id="group-siege-training" class="action-buttons-scroll" style="display: none; gap: 4px;">
+                <button id="btn-train-Shield" class="wood-btn barracks-train-btn" title="Train Shield Mantlet (150g, 15w, 5i, 1p)">
+                    <div class="train-price">150</div>
+                    <div class="train-label">Shield</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F6E1;&#xFE0F;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Shield" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Ballista" class="wood-btn barracks-train-btn" title="Train Ballista (300g, 30w, 10i, 2p)">
+                    <div class="train-price">300</div>
+                    <div class="train-label">Ballista</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F3F9;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Ballista" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Catapult" class="wood-btn barracks-train-btn" title="Train Catapult (300g, 30w, 10i, 2p)">
+                    <div class="train-price">300</div>
+                    <div class="train-label">Catapult</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x26F0;&#xFE0F;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Catapult" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Mangonel" class="wood-btn barracks-train-btn" title="Train Mangonel (300g, 30w, 10i, 2p)">
+                    <div class="train-price">300</div>
+                    <div class="train-label">Mangonel</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1FAA8;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Mangonel" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+                <button id="btn-train-Trebuchet" class="wood-btn barracks-train-btn" title="Build Trebuchet (3 Engineers: 450g, 45w, 15i, 3p)">
+                    <div class="train-price">450</div>
+                    <div class="train-label" style="font-size: 8px;">Trebuchet</div>
+                    <div class="train-icons">
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F3F0;</span>
+                    </div>
+                    <div class="train-numbers"><span id="queue-Trebuchet" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
+                </button>
+            </div>
+
+            <div id="placement-instructions" style="display: none;">
+                <span class="pulse-text">Placing building... Left-Click to place. Right-Click or ESC to cancel.</span>
+            </div>
+
+            <!-- Market Trade Panel -->
+            <div id="market-panel" class="market-control" style="display: none; padding: 5px; width: 100%; flex-direction: column; flex-grow: 1; min-height: 0;">
+                <div id="market-list" class="action-buttons-scroll">
+                    <!-- JS populated market rows -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Dynamic Action Panel -->
+        <div id="right-control-panel" class="hud-subpanel" style="display: none;">
+            <h3 id="right-panel-title">Production Controls</h3>
+            
+            <!-- Workshop Production Toggle Panel -->
+            <div id="workshop-panel" class="workshop-control" style="display: none;">
+                <p id="workshop-status-text" class="placeholder-text">Select product to craft:</p>
+                <div class="workshop-toggles">
+                    <button id="btn-product-1" class="wood-btn-gold" style="width: 100%; margin-bottom: 8px;">Product 1</button>
+                    <button id="btn-product-2" class="wood-btn-gold" style="width: 100%;">Product 2</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Game Over Screen Overlay -->
+    <div id="game-over-screen" style="display: none;">
+        <div class="game-over-content parchment-theme">
+            <h1 id="game-over-title">Game Over</h1>
+            <p id="game-over-message">The King has fallen!</p>
+            <button id="btn-restart" class="wood-btn-gold">Play Again</button>
+        </div>
+    </div>
+
+    <!-- Game Scripts -->
+    <script src="game.js?v=20260830"></script>
+</body>
+</html>
