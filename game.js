@@ -9,6 +9,7 @@ const WEAPONS = {
     "Slinger":  { dmg: 11, cd: 1.0, range: 30.0, speedMod: 0.0, type: "bow", prepTime: 2.0, desc: "Slinger (Mercenary, 75 Gold)" },
     "Spy":      { dmg: 10, cd: 1.0, range: 0.9, speedMod: 0.0, type: "melee", hpMod: -50, desc: "Spy (Mercenary, 100 Gold) [Sabotage, Disguise]" },
     "Assassin": { dmg: 50, cd: 2.0, range: 1.25, speedMod: 0.0, type: "melee", desc: "Assassin (Mercenary, 500 Gold) [Stealth, Climbs Walls]" },
+    "Doppelsoldner": { dmg: 30, cd: 1.5, range: 1.6, speedMod: 0.0, type: "melee", desc: "Doppelsoldner (Mercenary, 1000 Gold) [AoE Attack]" },
     "RoyalKnight": { dmg: 25, cd: 1.0, range: 1.3, speedMod: 0.0, type: "melee", desc: "Royal Knight (Mercenary, 1777 Gold)" },
     "Spear":    { dmg: 10, cd: 0.8, range: 2.1, speedMod: -0.10, type: "melee", vsCav: 2, desc: "Spear (+2.1 Range, -10% Speed)" },
     "Pike":     { dmg: 17, cd: 2.0, range: 3.1, speedMod: -0.20, type: "melee", vsCav: 3, desc: "Pike (+3.1 Range, -20% Speed)" },
@@ -2379,6 +2380,48 @@ function buildEntityMesh(entity) {
         pouch.position.y = 0.4;
         toolGroup.add(pouch);
         group.add(toolGroup);
+    } else if (entity.type === "soldier" && entity.weapon === "Doppelsoldner") {
+        const bodyCanvas = document.createElement("canvas");
+        bodyCanvas.width = 64; bodyCanvas.height = 64;
+        const bctx = bodyCanvas.getContext("2d");
+        const teamColor = entity.faction === "red" ? "#d32f2f" : "#1976d2";
+        bctx.fillStyle = "#ffd700"; // Yellow
+        bctx.fillRect(0,0,64,64);
+        bctx.fillStyle = teamColor;
+        bctx.fillRect(0,0,32,32); bctx.fillRect(32,32,32,32);
+        const bodyTex = new THREE.CanvasTexture(bodyCanvas);
+        bodyTex.magFilter = THREE.NearestFilter;
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.9, 8), new THREE.MeshStandardMaterial({ map: bodyTex }));
+        body.position.y = 0.45;
+        body.castShadow = true;
+        group.add(body);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.20, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        head.position.y = 1.05;
+        head.castShadow = true;
+        group.add(head);
+        const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.1, 8), new THREE.MeshStandardMaterial({ color: 0xffd700 }));
+        hat.position.y = 1.25;
+        group.add(hat);
+        const feather = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.04), new THREE.MeshStandardMaterial({ color: entity.faction === "red" ? 0xd32f2f : 0x1976d2 }));
+        feather.position.set(0.15, 1.3, 0.1);
+        feather.rotation.z = -Math.PI/6;
+        feather.rotation.x = Math.PI/6;
+        group.add(feather);
+        // Greatsword
+        const toolGroup = new THREE.Group();
+        toolGroup.name = "weaponGroup";
+        toolGroup.position.set(0.42, 0.4, 0.2);
+        toolGroup.rotation.x = Math.PI / 4;
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.02), new THREE.MeshStandardMaterial({ color: 0xcfd8dc, metalness: 0.9, roughness: 0.1 }));
+        blade.position.y = 0.65;
+        const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        hilt.position.y = -0.15;
+        const crossguard = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.04, 0.04), new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 }));
+        crossguard.position.y = 0;
+        toolGroup.add(blade);
+        toolGroup.add(hilt);
+        toolGroup.add(crossguard);
+        group.add(toolGroup);
     } else if (entity.type === "soldier" && entity.weapon === "Brute") {
         const bruteGroup = new THREE.Group();
         // Big hulking ugly dumb peasant. Skin color body, loincloth.
@@ -3202,7 +3245,7 @@ function updatePathGrid() {
                     }
                     const idx = z * 300 + x;
                     let currentSurfs = pathGrid[idx] || [];
-                    if ((e.type === "gatehouse" || e.type === "keep") && e.isOpen !== false) {
+                    if (e.type === "keep" || (e.type === "gatehouse" && e.isOpen !== false)) {
                         let groundY = getTerrainHeight(cx, cz);
                         if (!currentSurfs.includes(groundY)) currentSurfs.push(groundY);
                         if (!currentSurfs.includes(roofHeight)) currentSurfs.push(roofHeight);
@@ -4489,7 +4532,10 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             }
             let pathEndsTooFar = false;
             if (unit.path && unit.path.length > 0 && unit.targetEntity && unit.targetEntity.baseSpeed > 0) {
-                pathEndsTooFar = Math.hypot(unit.path[unit.path.length - 1].x - unit.targetPosition.x, unit.path[unit.path.length - 1].z - unit.targetPosition.z) > Math.max(1.5, pathRadius + 0.5);
+                const lastNode = unit.path[unit.path.length - 1];
+                if (lastNode && unit.targetPosition && lastNode.x !== undefined && unit.targetPosition.x !== undefined) {
+                    pathEndsTooFar = Math.hypot(lastNode.x - unit.targetPosition.x, lastNode.z - unit.targetPosition.z) > Math.max(1.5, pathRadius + 0.5);
+                }
             }
             if (!unit.path || unit.path.length === 0 || pathEndsTooFar) {
                 let shouldFindPath = true;
@@ -4946,7 +4992,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 }
             }
         }
-        if (unit.mesh && (unit.type === "peasant" || unit.weapon === "Sword" || unit.weapon === "Mace" || unit.weapon === "Axe")) {
+        if (unit.mesh && (unit.type === "peasant" || unit.weapon === "Sword" || unit.weapon === "Mace" || unit.weapon === "Axe" || unit.weapon === "Doppelsoldner")) {
             const wStats = WEAPONS[unit.weapon] || { cd: 1.0 };
             const pivotObj = unit.mesh.children.find(c => c.name === "weaponGroup");
             if (pivotObj) {
@@ -7977,6 +8023,11 @@ function applyEquipmentStats(peasant, config) {
         peasant.maxHealth = 175;
         peasant.health = 175;
         peasant.armor = 1;
+    } else if (config.weapon === "Doppelsoldner") {
+        peasant.maxHealth = 177;
+        peasant.health = 177;
+        peasant.armor = 4;
+        peasant.speed = 2.5;
     } else if (config.weapon === "Brute") {
         peasant.maxHealth = 400;
         peasant.health = 400;
@@ -9951,6 +10002,7 @@ const WEAPON_SVGS = {
     "Slinger": `<span class="btn-icon" style="font-size: 16px;">🪢</span>`,
     "Spy": `<span class="btn-icon" style="font-size: 16px;">🕵️</span>`,
     "Assassin": `<span class="btn-icon" style="font-size: 16px;">🥷</span>`,
+    "Doppelsoldner": `<span class="btn-icon" style="font-size: 16px;">&#x2694;</span>`,
     "RoyalKnight": `<span class="btn-icon" style="font-size: 16px;">👑</span>`,
     "Peasant": `<svg class="weapon-icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="#f5d0b5" stroke="#8d6e63" stroke-width="1"/><path d="M8,22 L8,14 Q12,12 16,14 L16,22" fill="#a1887f" stroke="#5d4037" stroke-width="1"/></svg>`,
     "King": `<svg class="weapon-icon" viewBox="0 0 24 24"><path d="M4,20 L4,10 L8,14 L12,8 L16,14 L20,10 L20,20 Z" fill="#ffd700" stroke="#b8860b" stroke-width="1"/></svg>`,
@@ -10428,6 +10480,7 @@ function updateSelectionHUD() {
                 "Slinger": "🪢 MERCENARY SLINGER",
                 "Spy": "🕵️ MERCENARY SPY",
                 "Assassin": "🥷 MERCENARY ASSASSIN",
+                "Doppelsoldner": "\uD83D\uDC80 DOPPELSOLDNER",
                 "RoyalKnight": "👑 ROYAL KNIGHT"
             };
             soldierName = wNameMap[first.weapon] || first.weapon.toUpperCase();
