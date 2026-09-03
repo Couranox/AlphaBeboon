@@ -530,9 +530,11 @@ function getFloorHeight(unit, nextX, nextZ) {
                             else rampEntity = null;
                         }
                     }
-                } else if (!((e.type === "gatehouse" || e.type === "keep") && e.isOpen !== false)) {
+                } else {
                     let shouldEject = true;
-                    if (e.type === "tower" && unit.y >= e.y + 2.0 - 1.5) {
+                    if ((e.type === "gatehouse" || e.type === "keep") && e.isOpen !== false) {
+                        shouldEject = false;
+                    } else if (e.type === "tower_tile" && unit.y > getTerrainHeight(unit.x, unit.z) + 0.5) {
                         shouldEject = false;
                     }
                     if (shouldEject && isInside) {
@@ -561,13 +563,13 @@ function getFloorHeight(unit, nextX, nextZ) {
                                 else ejectZ = e.z + hd + (colRad + 0.1);
                             }
                         }
-                    } else if (!shouldEject && isInside && e.type === "tower") {
+                    } else if (!shouldEject && isTouching && (e.type === "tower_tile" || e.type === "gatehouse" || e.type === "keep")) {
                         if (unit.y > floorHeight) {
-                            floorHeight = unit.y;
+                            floorHeight = unit.y; // Sustains current altitude for elevators/passages
                             onWall = true;
                         }
                     } else {
-                        // Unit is touching the outside of the bounding box, do NOT hoist them to the roof
+                        // (Comment obsolete: this block just sustains altitude, it doesn't hoist to roof)
                     }
                 }
             }
@@ -3208,25 +3210,8 @@ function updatePathGrid() {
                 }
             }
         } else {
-            if (e.type === "tower" && e.footprint) {
-                e.footprint.forEach(p => {
-                    const x = Math.round(p.x) + 150;
-                    const z = Math.round(p.z) + 150;
-                    if (x >= 0 && x < 300 && z >= 0 && z < 300) {
-                        const idx = z * 300 + x;
-                        let currentSurfs = pathGrid[idx] || [];
-                        let lowerY = e.y + 2.0;
-                        let roofY = e.y + e.height;
-                        if (!currentSurfs.includes(lowerY)) currentSurfs.push(lowerY);
-                        if (!currentSurfs.includes(roofY)) currentSurfs.push(roofY);
-                        rampGrid[idx] = 3; // Elevator!
-                        currentSurfs.isBuilding = true;
-                        currentSurfs.isWall = true;
-                        currentSurfs.isTower = true;
-                        pathGrid[idx] = currentSurfs;
-                    }
-                });
-                return; // exit the forEach callback early
+            if (e.type === "tower") {
+                return; // parent tower has no collision, child tiles handle it
             }
             const minX = Math.max(0, Math.round(e.x - hw + 0.01 + 150));
             const maxX = Math.min(299, Math.round(e.x + hw - 0.01 + 150));
@@ -3252,6 +3237,14 @@ function updatePathGrid() {
                         rampGrid[idx] = 3;
                         currentSurfs.isOpenGate = true;
                         if (e.type === "gatehouse") currentSurfs.isTower = true;
+                    } else if (e.type === "tower_tile") {
+                        if (!currentSurfs.includes(roofHeight)) currentSurfs.push(roofHeight);
+                        for (let y = 2.0; y < e.height; y += 1.0) {
+                            let nodeY = e.y + y;
+                            if (!currentSurfs.includes(nodeY)) currentSurfs.push(nodeY);
+                        }
+                        rampGrid[idx] = 3;
+                        currentSurfs.isTower = true;
                     } else {
                         if (!currentSurfs.includes(roofHeight)) currentSurfs.push(roofHeight);
                     }
@@ -3743,7 +3736,7 @@ function findPath(unit, targetPos, targetRadius = 0) {
                 const isSiege = unit && unit.type && unit.type.startsWith("siege_");
                 const isVerticalTeleport = (dx === 0 && dz === 0);
                 if (isVerticalTeleport) {
-                    if (isSiege) continue; // Siege units cannot use elevators
+                    if (isSiege && !(nSurfs.isTower && !nSurfs.isOpenGate)) continue; // Siege units can only use tower elevators
                     const currentValid = nSurfs.some(y => Math.abs(y - current.y) < 0.1);
                     if (!currentValid) continue;
                     if (ny === current.y) continue;
@@ -5337,7 +5330,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             const dz = unit.z - b.z;
             if (dz > cullDistZ || dz < -cullDistZ) return; // Quick cull Z
             const dist = Math.hypot(dx, dz);
-            const isBoxBuilding = BUILDING_TYPES[b.type] !== undefined && b.type !== "wall_column" && b.type !== "keep";
+            const isBoxBuilding = (BUILDING_TYPES[b.type] !== undefined || b.type === "tower_tile") && b.type !== "wall_column" && b.type !== "keep" && b.type !== "tower";
             if (b.isPlanned && unit.type === "king" && unit.faction === b.faction) {
                 let withinBuildRange = false;
                 if (b.type === "gatehouse" || b.type === "wall_column") {
@@ -5416,7 +5409,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             if (b.type === "wall_column" && inOpenGate) return;
             if (b.type === "tree" && unit.weapon === "Assassin") return;
             if (b.type === "farm" || b.type === "mine") return;
-            if (b.type === "tower_tile") return; // Physics handled purely by getFloorHeight
+            if (b.type === "tower") return; // Physics handled purely by tower_tile now
             let isColliding = false;
             let pushX = 0;
             let pushZ = 0;
@@ -5550,7 +5543,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 const tempRoof = b.y + (b.height || 2.0);
                 if (b.type === "gatehouse" && b.isOpen !== false && unit.y <= tempRoof - 0.8) return;
                 // Towers allow passage ONLY if the unit is already elevated (on a wall).
-                if (b.type === "tower" && unit.y > getTerrainHeight(unit.x, unit.z) + 0.5 && unit.y <= tempRoof - 0.8) return;
+                if (b.type === "tower_tile" && unit.y > getTerrainHeight(unit.x, unit.z) + 0.5 && unit.y <= tempRoof - 0.8) return;
                 if (b.type === "keep" && unit.y < b.y + 0.5) {
                     const angleToUnit = Math.atan2(unit.z - b.z, unit.x - b.x);
                     const doorAngle = b.mesh ? -b.mesh.rotation.y : 0;
@@ -5566,7 +5559,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                     roof = b.y + b.exactHeight + extraH;
                 }
                 let maxStep = b.isRamp ? 1.6 : 0.8;
-                if ((b.type === "tower" || b.type === "gatehouse") && typeof pathGrid !== "undefined") {
+                if ((b.type === "tower_tile" || b.type === "gatehouse") && typeof pathGrid !== "undefined") {
                     const unitGX = Math.round(unit.x) + 150;
                     const unitGZ = Math.round(unit.z) + 150;
                     if (unitGX >= 0 && unitGX < 300 && unitGZ >= 0 && unitGZ < 300) {
@@ -5580,7 +5573,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 // Trapped unit failsafe: if deep inside the building, handle escape
                 const isWorking = WORKER_STATES.has(unit.state);
                 if ((overlapDist > (unit.radius || 0.2) + Math.min(0.8, (b.radius || 1.0) * 0.5) || pushCount >= 2) && !isWorking) {
-                    if (b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "keep") {
+                    if (b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "keep" || b.type === "tower_tile") {
                         unit.y = roof;
                     } else {
                         // Find nearest pathable tile
@@ -8692,8 +8685,27 @@ function onMouseDown(e) {
                 if (hitEnt.isPlanned) {
                     pt.y = getTerrainHeight(pt.x, pt.z);
                 } else {
-                    pt.x = intersects[0].point.x;
-                    pt.z = intersects[0].point.z;
+                    if (hitEnt.type === "tower" && hitEnt.childTiles) {
+                        let closestTile = null;
+                        let minDist = Infinity;
+                        hitEnt.childTiles.forEach(tid => {
+                            const tile = entities.find(e => e.id === tid);
+                            if (tile) {
+                                const d = Math.hypot(tile.x - intersects[0].point.x, tile.z - intersects[0].point.z);
+                                if (d < minDist) { minDist = d; closestTile = tile; }
+                            }
+                        });
+                        if (closestTile) {
+                            pt.x = closestTile.x;
+                            pt.z = closestTile.z;
+                        } else {
+                            pt.x = intersects[0].point.x;
+                            pt.z = intersects[0].point.z;
+                        }
+                    } else {
+                        pt.x = intersects[0].point.x;
+                        pt.z = intersects[0].point.z;
+                    }
                     pt.y = hitEnt.y + (hitEnt.height || 6.0);
                 }
             } else if (hitEnt && (hitEnt.type === "wall_column" || hitEnt.type === "wall_ramp")) {
