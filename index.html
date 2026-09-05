@@ -30,6 +30,12 @@
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="color: #4a3c31; font-family: 'Cinzel', serif; font-size: 2em; margin: 0;">Game Paused</h2>
                 <div style="display: flex; align-items: center; gap: 10px;">
+                    <label for="healthbar-setting" style="font-family: 'Outfit', sans-serif; font-weight: bold; color: #4a3c31;">Healthbars:</label>
+                    <select id="healthbar-setting" style="font-family: 'Outfit', sans-serif; padding: 4px; border-radius: 4px; border: 1px solid #8b5a2b; background-color: #f4e8d2; color: #4a3c31; margin-right: 15px;">
+                        <option value="default" selected>Hurt / Selected</option>
+                        <option value="always">Always Show</option>
+                        <option value="never">Always Hide</option>
+                    </select>
                     <label for="volume-slider" style="font-family: 'Outfit', sans-serif; font-weight: bold; color: #4a3c31;">Music Volume:</label>
                     <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.24" style="width: 100px; accent-color: #8b5a2b; cursor: pointer;">
                 </div>
@@ -480,20 +486,33 @@
                     <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
                         <span id="lbl-wall-thickness" style="font-size: 12px; font-weight: bold;">1</span>
                         <input type="range" id="wall-thickness" min="1" max="10" value="1" style="writing-mode: vertical-lr; direction: rtl; width: 20px; height: 45px;">
-                        <label for="wall-thickness" style="font-size: 10px; color: #3e2723; font-weight: bold;">Thick</label>
+                        <label for="wall-thickness" style="font-size: 10px; color: #3e2723; font-weight: bold; margin-bottom: -3px;">Thick</label>
+                        <div style="display: flex; gap: 2px;">
+                            <div id="btn-thick-minus" style="width: 12px; height: 14px; border: 2px solid #e53935; background: transparent; cursor: pointer; box-sizing: border-box; display: flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; color: #e53935; user-select: none;">-</div>
+                            <div id="btn-thick-plus" style="width: 12px; height: 14px; border: 2px solid #43a047; background: transparent; cursor: pointer; box-sizing: border-box; display: flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; color: #43a047; user-select: none;">+</div>
+                        </div>
                     </div>
                     
                     <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
                         <span id="lbl-wall-height" style="font-size: 12px; font-weight: bold;">3</span>
                         <input type="range" id="wall-height" min="0" max="10" value="3" style="writing-mode: vertical-lr; direction: rtl; width: 20px; height: 45px;">
-                        <label for="wall-height" style="font-size: 10px; color: #3e2723; font-weight: bold;">Height</label>
+                        <label for="wall-height" style="font-size: 10px; color: #3e2723; font-weight: bold; margin-bottom: -3px;">Height</label>
+                        <div style="display: flex; gap: 2px;">
+                            <div id="btn-height-minus" style="width: 12px; height: 14px; border: 2px solid #e53935; background: transparent; cursor: pointer; box-sizing: border-box; display: flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; color: #e53935; user-select: none;">-</div>
+                            <div id="btn-height-plus" style="width: 12px; height: 14px; border: 2px solid #43a047; background: transparent; cursor: pointer; box-sizing: border-box; display: flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; color: #43a047; user-select: none;">+</div>
+                        </div>
                     </div>
                     
                     <div style="display: flex; flex-direction: column; align-items: center; gap: 5px;">
                         <span id="lbl-wall-slope" style="font-size: 12px; font-weight: bold;">-45</span>
                         <input type="range" id="wall-slope" min="-45" max="-5" value="-45" step="5" style="writing-mode: vertical-lr; direction: rtl; width: 20px; height: 45px;">
-                        <label for="wall-slope" style="font-size: 10px; color: #3e2723; font-weight: bold;">Slope</label>
+                        <label for="wall-slope" style="font-size: 10px; color: #3e2723; font-weight: bold; margin-bottom: -3px;">Slope</label>
+                        <div style="display: flex; gap: 2px;">
+                            <div id="btn-slope-minus" style="width: 12px; height: 14px; border: 2px solid #e53935; background: transparent; cursor: pointer; box-sizing: border-box; display: flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; color: #e53935; user-select: none;">-</div>
+                            <div id="btn-slope-plus" style="width: 12px; height: 14px; border: 2px solid #43a047; background: transparent; cursor: pointer; box-sizing: border-box; display: flex; justify-content: center; align-items: center; font-size: 10px; font-weight: bold; color: #43a047; user-select: none;">+</div>
+                        </div>
                     </div>
+
 
                 </div>
             </div>
@@ -621,16 +640,16 @@
             </div>
 
             <div id="group-mercenary-training" class="action-buttons-scroll" style="display: none; gap: 4px;">
-                <button id="btn-train-Grunt" class="wood-btn barracks-train-btn" title="Train Grunt (30g, 1 peasant)">
-                    <div class="train-price">30</div>
+                <button id="btn-train-Grunt" class="wood-btn barracks-train-btn" title="Train Grunt (20g, 1 peasant)">
+                    <div class="train-price">20</div>
                     <div class="train-label">Grunt</div>
                     <div class="train-icons">
                         <span class="btn-icon" style="font-size: 16px;">&#x1FA96;</span>
                     </div>
                     <div class="train-numbers"><span id="queue-Grunt" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
                 </button>
-                <button id="btn-train-Slinger" class="wood-btn barracks-train-btn" title="Train Slinger (75g, 1 peasant)">
-                    <div class="train-price">75</div>
+                <button id="btn-train-Slinger" class="wood-btn barracks-train-btn" title="Train Slinger (50g, 1 peasant)">
+                    <div class="train-price">50</div>
                     <div class="train-label">Slinger</div>
                     <div class="train-icons">
                         <span class="btn-icon" style="font-size: 16px;">&#x1FAA2;</span>
@@ -673,7 +692,7 @@
                     <div class="train-price">1000</div>
                     <div class="train-label" style="font-size: 8px; line-height: 1;">Doppel-<br>soldner</div>
                     <div class="train-icons">
-                        <span class="btn-icon" style="font-size: 16px;">&#x1F480;</span>
+                        <span class="btn-icon" style="font-size: 16px;">🪶</span>
                     </div>
                     <div class="train-numbers"><span id="queue-Doppelsoldner" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
                 </button>

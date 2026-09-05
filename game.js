@@ -3,12 +3,12 @@
 // ==========================================
 // --- GAME CONFIGURATION ---
 const WEAPONS = {
-    "Grunt":    { dmg: 10, cd: 1.0, range: 0.9, speedMod: 0.0, type: "melee", desc: "Grunt (Mercenary, 30 Gold)" },
-    "Thug":     { dmg: 15, cd: 1.0, range: 1.0, speedMod: 0.10, type: "melee", desc: "Thug (Mercenary, 177 Gold)" },
-    "Brute":    { dmg: 20, cd: 1.25, range: 1.25, speedMod: 0.0, type: "melee", desc: "Brute (Mercenary, 400 Gold)" },
-    "Slinger":  { dmg: 11, cd: 1.0, range: 30.0, speedMod: 0.0, type: "bow", prepTime: 2.0, desc: "Slinger (Mercenary, 75 Gold)" },
+    "Grunt":    { dmg: 10, cd: 1.0, range: 0.9, speedMod: 0.0, type: "melee", desc: "Grunt (Mercenary, 20 Gold)" },
+    "Thug":     { dmg: 17, cd: 1.0, range: 1.0, speedMod: 0.10, type: "melee", desc: "Thug (Mercenary, 177 Gold)" },
+    "Brute":    { dmg: 22, cd: 1.25, range: 1.25, speedMod: 0.0, type: "melee", desc: "Brute (Mercenary, 400 Gold)" },
+    "Slinger":  { dmg: 11, cd: 1.0, range: 30.0, speedMod: 0.0, type: "bow", prepTime: 2.0, desc: "Slinger (Mercenary, 50 Gold)" },
     "Spy":      { dmg: 10, cd: 1.0, range: 0.9, speedMod: 0.0, type: "melee", hpMod: -50, desc: "Spy (Mercenary, 100 Gold) [Sabotage, Disguise]" },
-    "Assassin": { dmg: 50, cd: 2.0, range: 1.25, speedMod: 0.0, type: "melee", desc: "Assassin (Mercenary, 500 Gold) [Stealth, Climbs Walls]" },
+    "Assassin": { dmg: 50, cd: 2.0, range: 1.28, speedMod: 0.0, type: "melee", desc: "Assassin (Mercenary, 500 Gold) [Stealth, Climbs Walls]" },
     "Doppelsoldner": { dmg: 30, cd: 1.5, range: 1.6, speedMod: 0.0, type: "melee", desc: "Doppelsoldner (Mercenary, 1000 Gold) [AoE Attack]" },
     "RoyalKnight": { dmg: 25, cd: 1.0, range: 1.3, speedMod: 0.0, type: "melee", desc: "Royal Knight (Mercenary, 1777 Gold)" },
     "Spear":    { dmg: 10, cd: 0.8, range: 2.1, speedMod: -0.10, type: "melee", vsCav: 2, desc: "Spear (+2.1 Range, -10% Speed)" },
@@ -19,7 +19,7 @@ const WEAPONS = {
     "Sword":    { dmg: 10, cd: 0.4,  range: 1.25, speedMod: 0.0, type: "melee",  desc: "Broadsword (Very Fast, Weak vs armor)" },
     "Mace":     { dmg: 24, cd: 1.5,  range: 0.9, speedMod: 0.0,  type: "melee", armorPen: 5, desc: "Heavy Mace (High Dmg, Slow, Strong vs armor)" },
     "Short Bow":{ dmg: 10, cd: 1.0, range: 25.0, speedMod: -0.10, type: "bow",    prepTime: 1.0, desc: "Short Bow (1s wind-up, 1s wind-down)" },
-    "Longbow":  { dmg: 13, cd: 1.0, range: 42.0, speedMod: -0.15, type: "bow",    prepTime: 2.0, desc: "Longbow (2s wind-up, 1s wind-down)" },
+    "Longbow":  { dmg: 13, cd: 1.0, range: 37, speedMod: -0.15, type: "bow",    prepTime: 2.0, desc: "Longbow (2s wind-up, 1s wind-down)" },
     "Crossbow": { dmg: 21, cd: 5.0, range: 30.0, speedMod: -0.20, type: "crossbow", armorPen: 8, reloadTime: 5.0, desc: "Crossbow (Needs 5s standstill after shot to reload)" },
     "Ballista": { dmg: 52, cd: 10.0, range: 50.0, speedMod: -0.50, type: "crossbow", reloadTime: 10.0, desc: "Ballista (10s reload, no dmg to stone)" },
     "Catapult": { dmg: 300, cd: 10.0, range: 50.0, speedMod: -0.50, type: "catapult", prepTime: 10.0, desc: "Catapult (10s prep, AOE, friendly fire)" },
@@ -48,7 +48,7 @@ const BASE_STATS = {
     king:    { maxHp: 500, speed: 2.0, armor: 5, radius: 0.4, height: 2.0, color: 0xffd700 }, // Gold armor King
     peasant: { maxHp: 50,  speed: 2.5, armor: 0, radius: 0.4, height: 1.2, color: 0x8d6e63 }, // Simple peasant
     soldier: { maxHp: 100, speed: 2.5, armor: 0, radius: 0.5, height: 1.6, color: 0x78909c }, // Trained soldier base
-    siege_shield: { maxHp: 300, speed: 1.0, armor: 10, radius: 0.5, height: 1.2, color: 0xcfd8dc },
+    siege_shield: { maxHp: 300, speed: 1.0, armor: 7, radius: 0.5, height: 1.2, color: 0xcfd8dc },
     siege_ballista: { maxHp: 200, speed: 0.75, armor: 0, radius: 0.6, height: 1.5, color: 0x8b5a2b },
     siege_catapult: { maxHp: 200, speed: 0.75, armor: 0, radius: 1.0, height: 1.5, color: 0x8b5a2b },
     siege_mangonel: { maxHp: 200, speed: 0.75, armor: 0, radius: 1.0, height: 1.5, color: 0x4a3219 },
@@ -496,7 +496,7 @@ function getFloorHeight(unit, nextX, nextZ) {
             isTouching = isInside || distSq < effColRad * effColRad;
             
             if (isTouching) {
-                let roofHeight = e.y + (e.type === "wall_column" && e.blocks ? e.blocks.length : (e.height || 2.0));
+                let roofHeight = e.y + (e.type === "wall_column" && e.blocks && e.blocks.length > 0 ? e.blocks.length : (e.height || 2.0));
                 let currentIsRamp = false;
                 
                 if (e.isRamp && (!e.blocks || e.blocks.length === e.originalHeight)) {
@@ -532,9 +532,20 @@ function getFloorHeight(unit, nextX, nextZ) {
                     }
                 } else {
                     let shouldEject = true;
+                    
+                    if (e.type === "tower_tile" || e.type === "tower") {
+                        if (unit.y > getTerrainHeight(unit.x, unit.z) + 0.5) shouldEject = false;
+                        else if (typeof pathGrid !== "undefined") {
+                            const unitGX = Math.round(unit.x) + 150;
+                            const unitGZ = Math.round(unit.z) + 150;
+                            if (unitGX >= 0 && unitGX < 300 && unitGZ >= 0 && unitGZ < 300) {
+                                const unitSurfs = pathGrid[unitGZ * 300 + unitGX];
+                                if (unitSurfs && unitSurfs.isWall) shouldEject = false;
+                            }
+                        }
+                    }
+                    
                     if ((e.type === "gatehouse" || e.type === "keep") && e.isOpen !== false) {
-                        shouldEject = false;
-                    } else if (e.type === "tower_tile" && unit.y > getTerrainHeight(unit.x, unit.z) + 0.5) {
                         shouldEject = false;
                     }
                     if (shouldEject && isInside) {
@@ -865,7 +876,7 @@ function init() {
     // Create Scene
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xb2ebf2);
-    scene.fog = new THREE.FogExp2(0xb2ebf2, 0.007);
+    scene.fog = new THREE.FogExp2(0xb2ebf2, 0.0015);
     // Create Camera
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
     updateCameraPosition();
@@ -995,6 +1006,28 @@ if (minimapCanvas) {
     if(hSlider) hSlider.addEventListener("input", (e) => document.getElementById("lbl-wall-height").innerText = e.target.value);
     const sSlider = document.getElementById("wall-slope");
     if(sSlider) sSlider.addEventListener("input", (e) => document.getElementById("lbl-wall-slope").innerText = e.target.value);
+
+    // Setup Slider Adjustment Buttons
+    const adjustSlider = (sliderId, labelId, deltaMultiplier) => {
+        const slider = document.getElementById(sliderId);
+        if (slider) {
+            const step = parseInt(slider.step, 10) || 1;
+            let newVal = parseInt(slider.value, 10) + (deltaMultiplier * step);
+            const min = parseInt(slider.min, 10);
+            const max = parseInt(slider.max, 10);
+            if (newVal < min) newVal = min;
+            if (newVal > max) newVal = max;
+            slider.value = newVal;
+            document.getElementById(labelId).innerText = newVal;
+            if (typeof lastGhostUpdateKey !== 'undefined') lastGhostUpdateKey = "";
+        }
+    };
+    document.getElementById("btn-thick-minus")?.addEventListener("click", () => adjustSlider("wall-thickness", "lbl-wall-thickness", -1));
+    document.getElementById("btn-thick-plus")?.addEventListener("click", () => adjustSlider("wall-thickness", "lbl-wall-thickness", 1));
+    document.getElementById("btn-height-minus")?.addEventListener("click", () => adjustSlider("wall-height", "lbl-wall-height", -1));
+    document.getElementById("btn-height-plus")?.addEventListener("click", () => adjustSlider("wall-height", "lbl-wall-height", 1));
+    document.getElementById("btn-slope-minus")?.addEventListener("click", () => adjustSlider("wall-slope", "lbl-wall-slope", -1));
+    document.getElementById("btn-slope-plus")?.addEventListener("click", () => adjustSlider("wall-slope", "lbl-wall-slope", 1));
     // Setup UI Tab Buttons
     document.getElementById("tab-civilian").addEventListener("click", () => showBuildTab("civilian"));
     document.getElementById("tab-military").addEventListener("click", () => showBuildTab("military"));
@@ -1550,6 +1583,61 @@ function buildWagonMesh(hasCargo, faction) {
     }
     return group;
 }
+function createCosmeticWedge(pA, pB, pC, entity, h, mat) {
+    const cp = (pB.x - pA.x) * (pC.z - pA.z) - (pB.z - pA.z) * (pC.x - pA.x);
+    if (cp < 0) {
+        const temp = pB; pB = pC; pC = temp;
+    }
+    const verts = [];
+    // Swap pB and pC to fix winding order so normals point up (top) and down (bottom)
+    verts.push(pA.x, h, pA.z, pC.x, h, pC.z, pB.x, h, pB.z);
+    verts.push(pA.x, 0, pA.z, pB.x, 0, pB.z, pC.x, 0, pC.z);
+    const addQuad = (p1, p2) => {
+        verts.push(p1.x, 0, p1.z, p1.x, h, p1.z, p2.x, 0, p2.z);
+        verts.push(p1.x, h, p1.z, p2.x, h, p2.z, p2.x, 0, p2.z);
+    };
+    // ONLY draw the exposed diagonal face (pB to pC).
+    // pA is the touching inner corner. 
+    // pA->pB and pC->pA perfectly overlap the parent walls, causing Z-fighting stripes.
+    addQuad(pB, pC);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    if (h <= 0.11) {
+        const pos = geo.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+            const vx = pos.getX(i);
+            const vz = pos.getZ(i);
+            const terrainY = getTerrainHeight(entity.x + vx, entity.z + vz);
+            pos.setY(i, (terrainY - entity.y) + (pos.getY(i) > 0 ? 0.2 : 0));
+        }
+    }
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.isCosmetic = true;
+    mesh.castShadow = !entity.isPlanned;
+    mesh.receiveShadow = !entity.isPlanned;
+    return mesh;
+}
+function updateWallNeighborsAround(pts) {
+    const wallsToUpdate = new Set();
+    const isWallType = (en) => (en.type === "wall_column" || en.type === "gatehouse" || en.type === "tower") && en.state !== "dead";
+    pts.forEach(p => {
+        entities.forEach(en => {
+            if (isWallType(en) && Math.abs(en.x - p.x) <= 1.5 && Math.abs(en.z - p.z) <= 1.5) {
+                wallsToUpdate.add(en);
+            }
+        });
+    });
+    wallsToUpdate.forEach(en => {
+        if (en.mesh) {
+            scene.remove(en.mesh);
+            disposeHierarchy(en.mesh);
+        }
+        en.mesh = buildEntityMesh(en);
+        en.mesh.position.set(en.x, en.y, en.z);
+        scene.add(en.mesh);
+    });
+}
 function buildEntityMesh(entity) {
     const group = new THREE.Group();
     if (entity.type === "tower_tile") return group; // Invisible physics tile
@@ -1815,7 +1903,7 @@ function buildEntityMesh(entity) {
         const actualH = isDamaged ? entity.blocks.length : (entity.exactHeight !== undefined ? entity.exactHeight : (entity.height !== undefined ? entity.height : 1));
         let geo;
         let baseH = actualH;
-        if (actualH === 0 && !entity.isRamp) {
+        if (actualH <= 0.11 && !entity.isRamp) {
             geo = new THREE.BoxGeometry(1.0, 0.2, 1.0);
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
@@ -1865,11 +1953,71 @@ function buildEntityMesh(entity) {
                 }
             }
         }
-        if (actualH === 0) mesh.position.y = 0;
+        if (actualH <= 0.11) mesh.position.y = 0;
         else mesh.position.y = actualH / 2;
         mesh.castShadow = !entity.isPlanned;
         mesh.receiveShadow = !entity.isPlanned;
         group.add(mesh);
+        
+        if (!entity.isPlanned && actualH > 0 && !isDamaged) {
+            const isWall = (e) => (e.type === "wall_column" || e.type === "gatehouse" || e.type === "tower") && e.faction === entity.faction && !e.isPlanned && e.state !== "dead";
+            const getWallAt = (x, z) => entities.find(e => Math.abs(e.x - x) < 0.1 && Math.abs(e.z - z) < 0.1 && isWall(e));
+            
+            let wedgeMat = mat.clone();
+            wedgeMat.side = THREE.FrontSide;
+            
+            const getMinIdForGap = (gx, gz) => {
+                const n1 = getWallAt(gx + 1, gz);
+                const n2 = getWallAt(gx - 1, gz);
+                const n3 = getWallAt(gx, gz + 1);
+                const n4 = getWallAt(gx, gz - 1);
+                let minId = Infinity;
+                if (n1) minId = Math.min(minId, n1.id);
+                if (n2) minId = Math.min(minId, n2.id);
+                if (n3) minId = Math.min(minId, n3.id);
+                if (n4) minId = Math.min(minId, n4.id);
+                return minId;
+            };
+
+            const diagonals = [
+                { dx: 1, dz: 1 }, { dx: 1, dz: -1 }, { dx: -1, dz: 1 }, { dx: -1, dz: -1 }
+            ];
+            diagonals.forEach(diag => {
+                const nx = entity.x + diag.dx;
+                const nz = entity.z + diag.dz;
+                const neighbor = getWallAt(nx, nz);
+                if (neighbor) {
+                    const gx1 = entity.x + diag.dx;
+                    const gz1 = entity.z;
+                    const gx2 = entity.x;
+                    const gz2 = entity.z + diag.dz;
+                    const w1 = getWallAt(gx1, gz1);
+                    const w2 = getWallAt(gx2, gz2);
+                    
+                    const nHeight = (neighbor.exactHeight !== undefined ? neighbor.exactHeight : (neighbor.height !== undefined ? neighbor.height : 1));
+                    const minH = Math.min(actualH, nHeight);
+                    
+                    if (!w1 && entity.id === getMinIdForGap(gx1, gz1)) {
+                        const wedge = createCosmeticWedge(
+                            {x: diag.dx/2, z: diag.dz/2}, 
+                            {x: diag.dx/2, z: -diag.dz/2}, 
+                            {x: diag.dx*1.5, z: diag.dz/2},
+                            entity, minH, wedgeMat
+                        );
+                        group.add(wedge);
+                    }
+                    if (!w2 && entity.id === getMinIdForGap(gx2, gz2)) {
+                        const wedge = createCosmeticWedge(
+                            {x: diag.dx/2, z: diag.dz/2}, 
+                            {x: -diag.dx/2, z: diag.dz/2}, 
+                            {x: diag.dx/2, z: diag.dz*1.5},
+                            entity, minH, wedgeMat
+                        );
+                        group.add(wedge);
+                    }
+                }
+            });
+        }
         if (entity.isCrenulated && !entity.isRamp && actualH > 0 && !isDamaged) {
             const crenSlope = new THREE.BoxGeometry(1.0, 0.5, 1.0);
             const pos = crenSlope.attributes.position;
@@ -3221,7 +3369,7 @@ function updatePathGrid() {
                 for (let z = minZ; z <= maxZ; z++) {
                     const cx = x - 150;
                     const cz = z - 150;
-                    let roofHeight = e.y + (e.type === "wall_column" && e.blocks ? e.blocks.length : e.height);
+                    let roofHeight = e.y + (e.type === "wall_column" && e.blocks && e.blocks.length > 0 ? e.blocks.length : e.height);
                     if (e.isRamp && (!e.blocks || e.blocks.length === e.originalHeight)) {
                         const dot = (cx - e.x) * e.rampDx + (cz - e.z) * e.rampDz;
                         const extraH = dot * Math.tan(e.rampSlope * Math.PI / 180);
@@ -3230,13 +3378,24 @@ function updatePathGrid() {
                     }
                     const idx = z * 300 + x;
                     let currentSurfs = pathGrid[idx] || [];
-                    if (e.type === "keep" || (e.type === "gatehouse" && e.isOpen !== false)) {
+                    if ((e.type === "gatehouse" || e.type === "keep") && e.isOpen !== false) {
                         let groundY = getTerrainHeight(cx, cz);
                         if (!currentSurfs.includes(groundY)) currentSurfs.push(groundY);
                         if (!currentSurfs.includes(roofHeight)) currentSurfs.push(roofHeight);
+                        for (let y = 2.0; y < e.height; y += 1.0) {
+                            let nodeY = e.y + y;
+                            if (!currentSurfs.includes(nodeY)) currentSurfs.push(nodeY);
+                        }
                         rampGrid[idx] = 3;
                         currentSurfs.isOpenGate = true;
                         if (e.type === "gatehouse") currentSurfs.isTower = true;
+                    } else if (e.type === "keep") {
+                        if (!currentSurfs.includes(roofHeight)) currentSurfs.push(roofHeight);
+                        currentSurfs.isOpenGate = false;
+                    } else if (e.type === "gatehouse") {
+                        if (!currentSurfs.includes(roofHeight)) currentSurfs.push(roofHeight);
+                        currentSurfs.isOpenGate = false;
+                        currentSurfs.isTower = true;
                     } else if (e.type === "tower_tile") {
                         if (!currentSurfs.includes(roofHeight)) currentSurfs.push(roofHeight);
                         for (let y = 2.0; y < e.height; y += 1.0) {
@@ -3669,7 +3828,7 @@ function findPath(unit, targetPos, targetRadius = 0) {
         }
         
         let yTolerance = Math.max(1.5, targetRadius);
-        if (unit && unit.workerBuilding && (unit.workerBuilding.type === "wall_column" || unit.workerBuilding.type === "wall_ramp" || unit.workerBuilding.type === "gatehouse" || unit.workerBuilding.type === "tower")) {
+        if (unit && unit.workerBuilding && (unit.workerBuilding.type === "wall_column" || unit.workerBuilding.type === "wall_ramp" || unit.workerBuilding.type === "gatehouse" || unit.workerBuilding.type === "tower" || unit.workerBuilding.type === "tower_tile")) {
             yTolerance = 12.0;
         }
         if ((targetRadius === 0 && current.x === ex && current.z === ez && Math.abs(current.y - targetPos.y) < 1.0) || (targetRadius > 0 && Math.hypot(current.x - targetPos.x, current.z - targetPos.z) <= targetRadius && Math.abs(current.y - targetPos.y) <= yTolerance)) {
@@ -3735,13 +3894,36 @@ function findPath(unit, targetPos, targetRadius = 0) {
                 const ny = nSurfs[s];
                 const isSiege = unit && unit.type && unit.type.startsWith("siege_");
                 const isVerticalTeleport = (dx === 0 && dz === 0);
+                
+                let extraCost = 0;
+                
                 if (isVerticalTeleport) {
                     if (isSiege && !(nSurfs.isTower && !nSurfs.isOpenGate)) continue; // Siege units can only use tower elevators
                     const currentValid = nSurfs.some(y => Math.abs(y - current.y) < 0.1);
                     if (!currentValid) continue;
                     if (ny === current.y) continue;
                 } else {
-                    if (unit && unit.radius > 0.5 && clearanceGrid[idx] < 2) continue;
+                    const c = clearanceGrid[idx];
+                    if (c === 0) {
+                        if (unit && unit.radius > 0.5) continue;
+                    } else if (c === 1) {
+                        extraCost += 0.5;
+                        if (unit && unit.radius > 0.5) {
+                            const wL = clearanceGrid[idx - 1] === 0;
+                            const wR = clearanceGrid[idx + 1] === 0;
+                            if (wL && wR) continue;
+                            const wU = clearanceGrid[idx - 300] === 0;
+                            const wD = clearanceGrid[idx + 300] === 0;
+                            if (wU && wD) continue;
+                            const wTL = clearanceGrid[idx - 301] === 0;
+                            const wBR = clearanceGrid[idx + 301] === 0;
+                            if (wTL && wBR) continue;
+                            const wTR = clearanceGrid[idx - 299] === 0;
+                            const wBL = clearanceGrid[idx + 299] === 0;
+                            if (wTR && wBL) continue;
+                        }
+                    }
+
                     if (isSiege) {
                         const dist = Math.hypot(dx, dz);
                         let slopeLimit = Math.tan(15 * Math.PI / 180) * dist;
@@ -3795,7 +3977,7 @@ function findPath(unit, targetPos, targetRadius = 0) {
                 const key = (nz + 150) * 300 + (nx + 150) + Math.floor(ny * 10) * 90000;
                 let neighbor = nodes.get(key);
                 if (neighbor && neighbor.closed) continue;
-                const gScore = current.g + neighbors[i].cost;
+                const gScore = current.g + neighbors[i].cost + extraCost;
                 let visited = !!neighbor;
                 if (!visited || gScore < neighbor.g) {
                     if (!visited) {
@@ -3834,7 +4016,7 @@ function getTerrainIntersection(mouseX, mouseY) {
             checkObjects.push(e.mesh);
         }
     });
-    const intersects = raycaster.intersectObjects(checkObjects, true);
+    const intersects = raycaster.intersectObjects(checkObjects, true).filter(h => !h.object.isCosmetic);
     if (intersects.length > 0) {
         const pt = intersects[0].point.clone();
         let root = intersects[0].object;
@@ -4068,7 +4250,7 @@ function findNextChainedWall(unit, isFetching = false, fallbackRef = null) {
     let plannedWalls = entities.filter(e => {
         if (!e.isPlanned || e.isUnreachable || e.faction !== unit.faction) return false;
         if (e.type !== "wall_column" && e.type !== "gatehouse" && e.type !== "wall_ramp" && e.type !== "tower") return false;
-        let eType = e.material || ((e.type === "wall_column" || e.type === "gatehouse" || e.type === "wall_ramp" || e.type === "tower") ? "stone" : "wood");
+        let eType = e.material || ((e.type === "wall_column" || e.type === "gatehouse" || e.type === "wall_ramp" || e.type === "tower" || e.type === "tower_tile") ? "stone" : "wood");
         if (unit.payloadAmount > 0 && eType !== unit.payloadResource) return false;
         return true;
     });
@@ -4239,6 +4421,7 @@ function completeBuilding(b) {
         b.mesh = buildEntityMesh(b);
         b.mesh.position.set(b.x, b.y, b.z);
         scene.add(b.mesh);
+        updateWallNeighborsAround([{x: b.x, z: b.z}]);
     } else {
         b.mesh.traverse(child => {
             if (child.material) {
@@ -4255,20 +4438,39 @@ function completeBuilding(b) {
 }
 function getUnitMass(u) {
     let mass = 1.0;
-    if (u.type === "peasant") mass = 0.5;
-    else if (u.type === "king" || (u.type === "soldier" && u.weapon === "RoyalKnight")) mass = 50.0;
-    else if (u.type && u.type.startsWith("siege")) mass = 20.0;
-    if (u.armors) {
-        for (let i = 0; i < u.armors.length; i++) {
-            const aKey = u.armors[i];
-            if (aKey === "Cloth" || aKey === "Leather") mass += 1.0;
-            else if (aKey === "Chain") mass += 2.0;
-            else if (aKey === "Plate") mass += 4.0;
+    const isEnemy = u.faction !== "red"; // Assuming player is red
+
+    if (u.type === "peasant") {
+        if (isEnemy) {
+            mass = (u.maxHealth || 50) + ((u.baseSpeed || 2.5) * 100);
+        } else {
+            const state = u.state;
+            if (state === "idle" || state === "wander" || state === "going_home") {
+                mass = 0.001;
+            } else if (["returning_payload", "gather_returning", "constructing_fetching", "worker_fetching", "woodcutter_delivering", "miner_delivering", "farmer_walking_to_keep", "loadhouse_peasant_delivering", "loadhouse_peasant_fetching"].includes(state)) {
+                mass = 5;
+            } else if (["constructing_delivering", "woodcutter_walking_to_tree", "miner_returning", "farmer_walking_to_farm", "worker_returning_to_shop", "worker_returning_to_shop_with_materials"].includes(state)) {
+                mass = 200;
+            } else {
+                mass = 20;
+            }
         }
-    }
-    if (u.hasHorse) mass += 4.0;
-    if (u.state === "idle" || u.state === "wander") {
-        mass *= 0.0001;
+    } else if (u.type === "soldier" || u.type === "mercenary") {
+        mass = (u.maxHealth || 100) + ((u.baseSpeed || 2.5) * 100);
+        if (!isEnemy && (u.state === "idle" || u.state === "wander")) {
+            mass = 5;
+        }
+    } else if (u.type && u.type.startsWith("siege")) {
+        mass = 2000;
+    } else if (u.type === "king") {
+        if (!isEnemy && (u.state === "idle" || u.state === "wander")) {
+            mass = 1;
+        } else {
+            mass = 5000;
+        }
+    } else {
+        // Fallback for any other type
+        mass = (u.maxHealth || 100) + ((u.baseSpeed || 2.5) * 100);
     }
     return mass;
 }
@@ -4385,7 +4587,8 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                     unit.path = null;
                 } else if (unit.state === "constructing_delivering") {
                     const b = unit.workerBuilding;
-                    const reach = b ? (b.radius || Math.max(b.dimX || 1, b.dimZ || 1) / 2) + 2.0 : 2.5;
+                    let reach = b ? (b.radius || Math.max(b.dimX || 1, b.dimZ || 1) / 2) + 2.0 : 2.5;
+                    if (b && (b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "tower" || b.type === "tower_tile")) reach += 3.0; // Extra build range
                     if (distToTarget <= reach) {
                         let amountToDeliver = Math.min(unit.payloadAmount, (b.resourcesNeededTotal || 0) - b.resourcesDelivered);
                         b.resourcesDelivered += amountToDeliver;
@@ -4515,13 +4718,29 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             } else if (["constructing_delivering", "training", "siege_training", "worker_returning_to_shop", "worker_returning_to_shop_with_materials", "woodcutter_walking_to_hut", "miner_returning", "farmer_walking_to_farm", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "miner", "farmer", "shop_worker", "market_worker"].includes(unit.state)) {
                 const b = unit.workerBuilding || unit.targetBarracks || unit.targetSiegeShop || unit.homeBuilding;
                 pathRadius = b ? (b.radius || Math.max(b.dimX || 1, b.dimZ || 1) / 2) + 1.0 : 2.0;
+                if (unit.state === "constructing_delivering" && b && (b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "tower" || b.type === "tower_tile")) {
+                    pathRadius += 3.0; // Extra build range
+                }
             } else if (unit.state === "woodcutter_walking_to_tree") {
                 const t = unit.targetTree;
                 pathRadius = t ? (t.radius || 0.5) + 1.0 : 1.5;
             } else if ((unit.state === "attacking" && unit.targetEntity) || unit.state === "attack_ground") {
                 const wStats = unit.weapon ? WEAPONS[unit.weapon] : { range: 0.9 };
                 const tRad = unit.targetEntity ? (unit.targetEntity.radius || 1.0) : 0.1;
-                pathRadius = unit.state === "attack_ground" ? Math.max(0.1, wStats.range - 1.0) : (tRad + (wStats.range * 0.5));
+                const isRanged = (wStats.type === "bow" || wStats.type === "crossbow" || wStats.type === "catapult");
+                let ty = unit.targetEntity ? (unit.targetEntity.y !== undefined ? unit.targetEntity.y : getTerrainHeight(unit.targetEntity.x, unit.targetEntity.z)) : (unit.targetPosition ? (unit.targetPosition.y !== undefined ? unit.targetPosition.y : getTerrainHeight(unit.targetPosition.x, unit.targetPosition.z)) : unit.y);
+                const heightAdv = isRanged ? Math.max(0, unit.y - ty) : 0;
+                let effectiveRange = wStats.range;
+                if (isRanged) {
+                    const attackRange = wStats.range + heightAdv + unit.radius + tRad;
+                    const dy = Math.abs(ty - unit.y);
+                    if (attackRange > dy) {
+                        effectiveRange = Math.max(0.1, Math.sqrt(attackRange * attackRange - dy * dy) - unit.radius - tRad);
+                    } else {
+                        effectiveRange = 0.1;
+                    }
+                }
+                pathRadius = unit.state === "attack_ground" ? Math.max(0.1, effectiveRange - 1.0) : (tRad + (effectiveRange * 0.5));
             }
             let pathEndsTooFar = false;
             if (unit.path && unit.path.length > 0 && unit.targetEntity && unit.targetEntity.baseSpeed > 0) {
@@ -4727,7 +4946,8 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             if ((unit.state === "attacking" && unit.targetEntity) || unit.state === "attack_ground") {
                 const wStats = unit.weapon ? WEAPONS[unit.weapon] : { range: 0.9 };
                 const tRad = unit.targetEntity ? (unit.targetEntity.radius || 1.0) : 0.1;
-                arrivalRadius = unit.state === "attack_ground" ? Math.max(0.1, wStats.range - 1.0) : tRad;
+                // Use the previously calculated pathRadius which accounts for height advantage, instead of base wStats.range
+                arrivalRadius = unit.state === "attack_ground" ? pathRadius : tRad;
             }
             if (pathRadius > 0 && unit.state !== "attacking" && unit.state !== "attack_ground") {
                 arrivalRadius = Math.max(arrivalRadius, pathRadius - 0.5);
@@ -4735,6 +4955,11 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             let isYArrived = true;
             if (unit.targetPosition && unit.targetPosition.y !== undefined && unit.y !== undefined) {
                 isYArrived = Math.abs(unit.targetPosition.y - unit.y) < 1.5;
+                if (unit.state === "attack_ground") isYArrived = true;
+                if (unit.state === "attacking" && unit.weapon) {
+                    const w = WEAPONS[unit.weapon];
+                    if (w && w.range > 2.0) isYArrived = true;
+                }
             }
             if (finalDist < arrivalRadius && isYArrived && unit.timeNearTarget < 3.0) {
                 if (unit.path) {
@@ -4943,10 +5168,14 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
         // Track standstill logic for Bows, Crossbows & Siege
         let intendedMove = unit.targetPosition !== null || (unit.path && unit.path.length > 0);
         if (unit.state === "attack_ground" && unit.targetPosition) {
-            const wStats = unit.weapon ? WEAPONS[unit.weapon] : { range: 0.9 };
-            const dist = Math.hypot(unit.x - unit.targetPosition.x, unit.z - unit.targetPosition.z);
-            if (dist <= wStats.range) {
+            if (unit.inCombatRange) {
                 intendedMove = false;
+            } else {
+                const wStats = unit.weapon ? WEAPONS[unit.weapon] : { range: 0.9 };
+                const dist = Math.hypot(unit.x - unit.targetPosition.x, unit.z - unit.targetPosition.z);
+                if (dist <= wStats.range) {
+                    intendedMove = false;
+                }
             }
         }
         let isMountedShortBow = (unit.weapon === "Short Bow" && unit.hasHorse);
@@ -4974,14 +5203,20 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             if (armGroup) {
                 const wStats = WEAPONS[unit.weapon];
                 const fireAnimTime = 0.5;
+                const hasTarget = unit.targetEntity || unit.state === "attack_ground";
+                
                 if (unit.cooldownTimer > wStats.cd - fireAnimTime) {
                     armGroup.rotation.x = Math.PI / 6; 
-                } else if (unit.cooldownTimer > 0) {
-                    const progress = 1.0 - (unit.cooldownTimer / (wStats.cd - fireAnimTime));
-                    armGroup.rotation.x = (Math.PI / 6) - (Math.PI * 0.66 * progress);
+                } else if (hasTarget) {
+                    if (unit.cooldownTimer > 0) {
+                        const progress = 1.0 - (unit.cooldownTimer / (wStats.cd - fireAnimTime));
+                        armGroup.rotation.x = (Math.PI / 6) - (Math.PI * 0.66 * progress);
+                    } else {
+                        const progress = Math.min(1.0, unit.timeStationary / wStats.prepTime);
+                        armGroup.rotation.x = (Math.PI / 6) - (Math.PI * 0.66 * progress);
+                    }
                 } else {
-                    const progress = Math.min(1.0, unit.timeStationary / wStats.prepTime);
-                    armGroup.rotation.x = (Math.PI / 6) - (Math.PI * 0.66 * progress);
+                    armGroup.rotation.x = Math.PI / 6; // Completely uncharged
                 }
             }
         }
@@ -5014,7 +5249,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
         if (unit.mesh && unit.weapon === "Slinger") {
             const pivotObj = unit.mesh.children.find(c => c.name === "weaponGroup");
             if (pivotObj) {
-                if (unit.state === "attacking" || unit.state === "attack_ground") {
+                if (unit.state === "attacking" || unit.state === "attack_ground" || unit.targetEntity) {
                     if (unit.timeStationary > 0 && unit.timeStationary < 2.0) {
                         const spinTime = unit.timeStationary;
                         const spinRate = Math.PI * 6; // 3 full rotations per second
@@ -5051,7 +5286,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         bowString = c.children.find(subC => subC.name === "bowString") || bowString;
                     }
                 });
-                if (unit.state === "attacking" || unit.state === "attack_ground") {
+                if (unit.state === "attacking" || unit.state === "attack_ground" || unit.targetEntity) {
                     const wStats = WEAPONS[unit.weapon];
                     if (unit.timeStationary > 0 && unit.timeStationary < wStats.prepTime) {
                         // Winding up: show arrow, pull back
@@ -5203,7 +5438,8 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         let weightB = baseB;
                         // Tie-Breaker Only 10x Seniority
                         // If they have the exact same base mass, the older unit (uA) gets a massive 10x anchor bonus
-                        if (baseA === baseB && uA.state !== "idle" && uA.state !== "wander") {
+                        // Do not apply this vs enemies, so they push each other equally
+                        if (baseA === baseB && uA.state !== "idle" && uA.state !== "wander" && uA.faction === uB.faction) {
                             weightA *= 10.0;
                         } else {
                             // If they aren't identical, just use a tiny micro-bonus so we don't divide by zero or perfectly tie
@@ -5222,10 +5458,39 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         const jitterZ = Math.sin(now + uA.id * 0.5) * 0.002;
                         const slideX = -pushZ * slideMult + jitterX;
                         const slideZ = pushX * slideMult + jitterZ;
-                        let dxA = -pushX * ratioA + slideX * ratioA;
-                        let dzA = -pushZ * ratioA + slideZ * ratioA;
-                        let dxB = pushX * ratioB - slideX * ratioB;
-                        let dzB = pushZ * ratioB - slideZ * ratioB;
+                        
+                        let keepRightX_A = 0, keepRightZ_A = 0;
+                        let keepRightX_B = 0, keepRightZ_B = 0;
+
+                        const velAX = uA.x - (uA._frameStartX || uA.x);
+                        const velAZ = uA.z - (uA._frameStartZ || uA.z);
+                        const magA = Math.hypot(velAX, velAZ);
+
+                        const velBX = uB.x - (uB._frameStartX || uB.x);
+                        const velBZ = uB.z - (uB._frameStartZ || uB.z);
+                        const magB = Math.hypot(velBX, velBZ);
+
+                        if (magA > 0.001 && magB > 0.001) {
+                            const dirAX = velAX / magA, dirAZ = velAZ / magA;
+                            const dirBX = velBX / magB, dirBZ = velBZ / magB;
+                            const dot = dirAX * dirBX + dirAZ * dirBZ;
+                            
+                            // Head on or glancing collision
+                            if (dot < -0.2) {
+                                // Gentle nudge (20% of the overlap distance) applied sideways
+                                const rightForce = overlap * 0.2; 
+                                keepRightX_A = dirAZ * rightForce;
+                                keepRightZ_A = -dirAX * rightForce;
+                                
+                                keepRightX_B = dirBZ * rightForce;
+                                keepRightZ_B = -dirBX * rightForce;
+                            }
+                        }
+
+                        let dxA = -pushX * ratioA + slideX * ratioA + keepRightX_A;
+                        let dzA = -pushZ * ratioA + slideZ * ratioA + keepRightZ_A;
+                        let dxB = pushX * ratioB - slideX * ratioB + keepRightX_B;
+                        let dzB = pushZ * ratioB - slideZ * ratioB + keepRightZ_B;
                         // Conservation of Displacement (Directional)
                         function resolvePush(u, px, pz, dt) {
                             const bSpeed = u.baseSpeed !== undefined ? u.baseSpeed : 1.0;
@@ -5254,11 +5519,16 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                             // Idle units (pathMag is 0) should be easily shoved out of the way (5.0x),
                             // UNLESS they are heavy objects like siege equipment or the King.
                             let idleMult = 5.0;
-                            if (u.type && (u.type.startsWith("siege") || u.type === "king" || (u.type === "soldier" && u.weapon === "RoyalKnight"))) {
-                                idleMult = 0.1; // Heavy units barely budge when idle
+                            if (u.faction !== "red" || u.state === "attacking" || u.state === "fightmove") {
+                                idleMult = 0.5; // Combatants actively fighting or enemies firmly hold their ground
+                            } else if (u.type && (u.type.startsWith("siege") || u.type === "king" || (u.type === "soldier" && u.weapon === "RoyalKnight"))) {
+                                idleMult = 0.1; // Heavy units barely budge when truly idle
+                            } else if (u.faction === "red" && u.type === "peasant" && (u.state === "idle" || u.state === "wander" || u.state === "going_home")) {
+                                idleMult = 15.0; // Aimless peasants are practically fluid, shoved instantly
                             }
                             // Moving units can be pushed sideways at 2.5x to allow smooth sliding/passing.
-                            const maxLat = limit * (pathMag > 0.0001 ? 2.5 : idleMult);
+                            const isAimless = (u.faction === "red" && u.type === "peasant" && (u.state === "idle" || u.state === "wander" || u.state === "going_home"));
+                            const maxLat = limit * ((pathMag > 0.0001 && !isAimless) ? 2.5 : idleMult);
                             const curMag = Math.hypot(px, pz);
                             if (curMag > maxLat) {
                                 const scale = maxLat / curMag;
@@ -5543,7 +5813,17 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 const tempRoof = b.y + (b.height || 2.0);
                 if (b.type === "gatehouse" && b.isOpen !== false && unit.y <= tempRoof - 0.8) return;
                 // Towers allow passage ONLY if the unit is already elevated (on a wall).
-                if (b.type === "tower_tile" && unit.y > getTerrainHeight(unit.x, unit.z) + 0.5 && unit.y <= tempRoof - 0.8) return;
+                if (b.type === "tower_tile" && unit.y <= tempRoof - 0.8) {
+                    if (unit.y > getTerrainHeight(unit.x, unit.z) + 0.5) return;
+                    else if (typeof pathGrid !== "undefined") {
+                        const unitGX = Math.round(unit.x) + 150;
+                        const unitGZ = Math.round(unit.z) + 150;
+                        if (unitGX >= 0 && unitGX < 300 && unitGZ >= 0 && unitGZ < 300) {
+                            const unitSurfs = pathGrid[unitGZ * 300 + unitGX];
+                            if (unitSurfs && unitSurfs.isWall) return;
+                        }
+                    }
+                }
                 if (b.type === "keep" && unit.y < b.y + 0.5) {
                     const angleToUnit = Math.atan2(unit.z - b.z, unit.x - b.x);
                     const doorAngle = b.mesh ? -b.mesh.rotation.y : 0;
@@ -5701,6 +5981,9 @@ function handleCombat(deltaTime, combatants) {
         if (unit.cooldownTimer > 0) {
             unit.cooldownTimer -= deltaTime;
         }
+        if (unit.ignoreWallsTimer > 0) {
+            unit.ignoreWallsTimer -= deltaTime;
+        }
         // All units (including peasants) can now natively defend themselves thanks to spatial hashing!
         if (unit.type === "siege_shield") return;
         // Restore worker combat filter: only idle, wandering, or manually commanded peasants will fight
@@ -5783,6 +6066,7 @@ function handleCombat(deltaTime, combatants) {
                                 }
                                 const isEnemyStone = (enemy.material === "stone" || enemy.type === "keep" || enemy.type === "wall_column" || enemy.type === "gatehouse" || enemy.type === "wall_ramp");
                                 if ((wStats.type === "bow" || wStats.type === "crossbow") && isEnemyStone) continue;
+                                if (unit.ignoreWallsTimer > 0 && isEnemyStone) continue;
                                 const dx = enemy.x - unit.x;
                                 const dy = enemy.y - unit.y;
                                 const dz = enemy.z - unit.z;
@@ -5834,23 +6118,19 @@ function handleCombat(deltaTime, combatants) {
         }
         if (target && unit.state !== "attacking") {
             if (isFightMoving) {
-                if (isMountedShortBow) {
-                    unit.targetEntity = target;
+                // Engage and chase (even horse archers stop to attack during fightmove)
+                unit.savedFightMoveDest = unit.targetPosition ? unit.targetPosition.clone() : (unit.fightMoveDestination ? unit.fightMoveDestination.clone() : new THREE.Vector3(unit.x, unit.y, unit.z));
+                if (unit.weapon === "Catapult" || unit.weapon === "Trebuchet" || unit.weapon === "Mangonel") {
+                    unit.targetEntity = null;
+                    unit.state = "attack_ground";
+                    unit.targetPosition = getPredictedTargetPosition(target);
                 } else {
-                    // Engage and chase
-                    unit.savedFightMoveDest = unit.targetPosition ? unit.targetPosition.clone() : (unit.fightMoveDestination ? unit.fightMoveDestination.clone() : new THREE.Vector3(unit.x, unit.y, unit.z));
-                    if (unit.weapon === "Catapult" || unit.weapon === "Trebuchet" || unit.weapon === "Mangonel") {
-                        unit.targetEntity = null;
-                        unit.state = "attack_ground";
-                        unit.targetPosition = getPredictedTargetPosition(target);
-                    } else {
-                        unit.targetEntity = target;
-                        unit.state = "attacking";
-                        unit.isExplicitAttack = false;
-                    }
-                    unit.path = null;
-                    unit.pathCooldown = 0;
+                    unit.targetEntity = target;
+                    unit.state = "attacking";
+                    unit.isExplicitAttack = false;
                 }
+                unit.path = null;
+                unit.pathCooldown = 0;
             } else {
                 // Not fightmoving, but found a target
                 if (unit.type !== "peasant") {
@@ -5913,7 +6193,7 @@ function handleCombat(deltaTime, combatants) {
                     dealDamage(unit, target, wStats.dmg);
                     spawnSlashEffect(target.x, target.y + target.height * 0.5, target.z);
                     if (unit.weapon === "Doppelsoldner") {
-                        const hits = getEntitiesInSplashRadius(target.x, target.z, 2.0);
+                        const hits = getEntitiesInSplashRadius(unit.x, unit.z, 2.0);
                         hits.forEach(hit => {
                             if (hit.ent !== target && hit.ent.faction !== unit.faction && hit.ent.state !== "dead" && !["tree","gold","iron","stone"].includes(hit.ent.type)) {
                                 dealDamage(unit, hit.ent, 15);
@@ -6066,7 +6346,7 @@ function spawnProjectile(attacker, target, damage) {
     }
     let aimX = isCatapult ? (target.x || target.x === 0 ? target.x : interception.x) : interception.x;
     let aimZ = isCatapult ? (target.z || target.z === 0 ? target.z : interception.z) : interception.z;
-    let aimY = getFloorHeight({y: 10000}, aimX, aimZ).y + target.height * 0.6;
+    let aimY = getFloorHeight({y: 10000}, aimX, aimZ).y + (target.height || 1.0) * 0.6;
     let isMiss = false;
     if (Math.random() < missChance) {
         isMiss = true;
@@ -6170,8 +6450,10 @@ function updateProjectiles(deltaTime, activeShields) {
                     const s = activeShields[j];
                     if (s.faction !== p.attacker.faction && s.state !== "dead") {
                         const distSq = (s.x - p.x)**2 + (s.z - p.z)**2;
-                        if (distSq <= (s.radius)**2) {
-                            if (p.y >= s.y && p.y <= s.y + (s.height || 2.0)) {
+                        const effectiveRadius = s.type === "siege_shield" ? 1.0 : s.radius; // 2 diameter
+                        if (distSq <= effectiveRadius**2) {
+                            const effectiveHeight = s.type === "siege_shield" ? 2.0 : (s.height || 2.0); // 2 tall
+                            if (p.y >= s.y && p.y <= s.y + effectiveHeight) {
                                 crashed = true;
                                 crashEntity = s;
                                 break;
@@ -6451,9 +6733,19 @@ function convertPeasantToSiegeUnit(peasant, shop) {
                     disposeHierarchy(e.mesh);
                     e.mesh = null;
                 }
+                if (e.healthBar) {
+                    scene.remove(e.healthBar);
+                    e.healthBar = null;
+                }
                 pilotsConverted++;
             }
         });
+        
+        if (shop.rallyPoint) {
+            siegeEnt.targetPosition = shop.rallyPoint.clone();
+            siegeEnt.state = "moving";
+        }
+        
         if (siegeEnt.faction === "red") window.uiNeedsUpdate = true;
     }
 }
@@ -6500,7 +6792,7 @@ function processConstructionQueue(activePeasants, keeps, filterFn = null) {
     factions.forEach(faction => {
         let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home"));
         if (idlePeasants.length === 0) return;
-        const planned = entities.filter(e => e.faction === faction && e.isPlanned && e.state !== "dead" && !e.isUnreachable && (!filterFn || filterFn(e)));
+        const planned = entities.filter(e => e.faction === faction && e.isPlanned && e.state !== "dead" && !e.isUnreachable && e.type !== "tower_tile" && (!filterFn || filterFn(e)));
         if (planned.length === 0) return;
         let needsWork = [];
         let currentlyCarriedMap = buildCarriedMap(faction);
@@ -6515,12 +6807,14 @@ function processConstructionQueue(activePeasants, keeps, filterFn = null) {
         const keep = keeps.find(k => k.faction === faction && !k.isPlanned);
         needsWork.sort((a, b) => {
             const getCat = (e) => {
-                if (e.type === "house") return 5;
-                if (e.type === "gatehouse") return 4;
+                if (e.type === "house") return 20; // Highest priority
+                if (e.type === "barracks" || e.type === "siegeshop" || e.type === "stables") return 15; // 2nd highest
+                // Other economic buildings are default priority (10)
+                if (e.type === "gatehouse") return 4; // Lowest priority
                 if (e.type === "wall_ramp") return 3;
                 if (e.type === "tower" || e.type === "tower_tile") return 2;
                 if (e.type === "wall_column") return 1;
-                return 0;
+                return 10;
             };
             const cA = getCat(a.b);
             const cB = getCat(b.b);
@@ -7774,10 +8068,10 @@ window.trainMercenary = function(weapon, event) {
         const b = selectedEntities.find(e => e.type === "mercenary_post" && e.faction === "red" && !e.isPlanned);
         if (!b) break;
         let goldCost = 0;
-        if (weapon === "Grunt") goldCost = 30;
+        if (weapon === "Grunt") goldCost = 20;
         else if (weapon === "Thug") goldCost = 177;
         else if (weapon === "Brute") goldCost = 400;
-        else if (weapon === "Slinger") goldCost = 75;
+        else if (weapon === "Slinger") goldCost = 50;
         else if (weapon === "Spy") goldCost = 100;
         else if (weapon === "Assassin") goldCost = 500;
         else if (weapon === "Doppelsoldner") goldCost = 1000;
@@ -7853,20 +8147,30 @@ window.trainUnitFromSelectedBarracks = function(weapon, event) {
             finalArmors.push(aKey);
         }
         if (missingArmor) break;
+        
+        let finalHasHorse = hasHorse;
+        let missingHorse = false;
         if (hasHorse) {
             const stats = getHorseStats("red");
             if (stats.used >= stats.cap) {
-                if (i === 0) showStatusLog("No available horses! Build more Stables.");
-                break;
+                if (window.armorLockState) {
+                    if (i === 0) showStatusLog("No available horses! Build more Stables.");
+                    missingHorse = true;
+                    break;
+                } else {
+                    finalHasHorse = false;
+                }
             }
         }
+        if (missingHorse) break;
+        
         resources.gold -= goldCost;
         b.inventory[weapon]--;
         finalArmors.forEach(aKey => b.inventory[aKey]--);
         soldierTrainingQueue["red"].push({
             weapon: weapon,
             armors: finalArmors,
-            hasHorse: hasHorse,
+            hasHorse: finalHasHorse,
             goldCost: goldCost,
             barracksId: b.id
         });
@@ -7918,7 +8222,7 @@ function updateBarracksQueueUI() {
 }
 function updateSiegeShopQueueUI() {
     const weaponCounts = {
-        "Shield": 0, "Ballista": 0, "Catapult": 0, "Trebuchet": 0
+        "Shield": 0, "Ballista": 0, "Catapult": 0, "Trebuchet": 0, "Mangonel": 0
     };
     siegeTrainingQueue["red"].forEach(q => {
         if (weaponCounts[q.type] !== undefined) weaponCounts[q.type]++;
@@ -8013,19 +8317,20 @@ function applyEquipmentStats(peasant, config) {
     peasant.armor = totalArmorMod;
     peasant.speed = base.speed * (1.0 + totalSpeedMod) + (peasant.hasHorse ? 1.625 : 0.0);
     if (config.weapon === "Thug") {
-        peasant.maxHealth = 175;
-        peasant.health = 175;
+        peasant.maxHealth = 177;
+        peasant.health = 177;
         peasant.armor = 1;
+        peasant.speed = 2.77;
     } else if (config.weapon === "Doppelsoldner") {
         peasant.maxHealth = 177;
         peasant.health = 177;
         peasant.armor = 4;
         peasant.speed = 2.5;
     } else if (config.weapon === "Brute") {
-        peasant.maxHealth = 400;
-        peasant.health = 400;
-        peasant.armor = 2;
-        peasant.speed = 1.9;
+        peasant.maxHealth = 475;
+        peasant.health = 475;
+        peasant.armor = 0;
+        peasant.speed = 2.4;
     } else if (config.weapon === "Slinger") {
         peasant.maxHealth = 50;
         peasant.health = 50;
@@ -8123,10 +8428,17 @@ function convertPeasantToSoldier(peasant, barracks) {
         peasant.isDisguised = true;
         peasant.disguiseTimer = 0;
     }
-    const angle = Math.random() * Math.PI * 2;
-    const finalX = barracks.x + Math.cos(angle) * 4.5;
-    const finalZ = barracks.z + Math.sin(angle) * 4.5;
-    peasant.targetPosition = new THREE.Vector3(finalX, getTerrainHeight(finalX, finalZ), finalZ);
+    if (barracks.rallyPoint) {
+        peasant.targetPosition = barracks.rallyPoint.clone();
+        peasant.state = "moving";
+        peasant.isExplicitAttack = false;
+        peasant.targetEntity = null;
+    } else {
+        const angle = Math.random() * Math.PI * 2;
+        const finalX = barracks.x + Math.cos(angle) * 4.5;
+        const finalZ = barracks.z + Math.sin(angle) * 4.5;
+        peasant.targetPosition = new THREE.Vector3(finalX, getTerrainHeight(finalX, finalZ), finalZ);
+    }
     showStatusLog("Trained: " + config.weapon + " (" + config.armors.join("+") + ")");
         updateUI();
 }
@@ -8178,6 +8490,8 @@ function performDisband(ent) {
     selectedEntities = selectedEntities.filter(e => e !== ent);
     needsPathGridUpdate = true;
     if (ent.mesh) scene.remove(ent.mesh);
+    if (ent.healthBar) scene.remove(ent.healthBar);
+    if (ent.healthBar) scene.remove(ent.healthBar);
     
     if (ent.homeBuilding && ent.homeBuilding.spawnedPeasants) {
         ent.homeBuilding.spawnedPeasants = ent.homeBuilding.spawnedPeasants.filter(p => p !== ent);
@@ -8504,9 +8818,117 @@ function toggleWorkshopProduct(prodIdx) {
     }
 }
 // Build Tab Toggles civilian vs military
+
+if (typeof window.blueprintGeos === 'undefined') {
+    window.blueprintGeos = {};
+    window.getBPGeo = function(type) {
+        if (!window.blueprintGeos[type]) {
+            if (type === 'box') {
+                window.blueprintGeos.box = new THREE.BoxGeometry(1, 1, 1);
+            } else if (type === 'crenSlope') {
+                const geo = new THREE.BoxGeometry(1.0, 0.5, 1.0);
+                const pos = geo.attributes.position;
+                for(let i=0; i<pos.count; i++) {
+                    if (pos.getY(i) > 0) {
+                        pos.setX(i, pos.getX(i) * 0.5);
+                        pos.setZ(i, pos.getZ(i) * 0.5);
+                    }
+                }
+                geo.computeVertexNormals();
+                window.blueprintGeos.crenSlope = geo;
+            } else if (type === 'crenTop') {
+                window.blueprintGeos.crenTop = new THREE.BoxGeometry(0.5, 1.0, 0.5);
+            }
+        }
+        return window.blueprintGeos[type];
+    };
+    window.blueprintMaterials = {
+        stone: new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.4 }),
+        wood: new THREE.MeshBasicMaterial({ color: 0xd2a679, transparent: true, opacity: 0.4 }),
+        blocked: new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.4 }),
+        poor: new THREE.MeshBasicMaterial({ color: 0xff8c00, transparent: true, opacity: 0.4 }),
+        overlap: new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.4 }),
+        delete: new THREE.MeshBasicMaterial({ color: 0xd32f2f, transparent: true, opacity: 0.5 })
+    };
+    window.wallBlueprintPool = [];
+    window.wallBlueprintPoolIdx = 0;
+    window.getPooledBlueprintMesh = function() {
+        if (window.wallBlueprintPoolIdx < window.wallBlueprintPool.length) {
+            const obj = window.wallBlueprintPool[window.wallBlueprintPoolIdx++];
+            obj.visible = true;
+            obj.children[0].visible = true;
+            obj.children[1].visible = true;
+            obj.children[2].visible = true;
+            obj.children.forEach(c => {
+                if (c.geometry && c.geometry.isCustomBlueprintGeo) {
+                    c.geometry.dispose();
+                    c.geometry = window.getBPGeo('box');
+                }
+            });
+            return obj;
+        }
+        const group = new THREE.Group();
+        group.isPooledBlueprint = true;
+        
+        const mainMesh = new THREE.Mesh(window.getBPGeo('box'), window.blueprintMaterials.stone);
+        group.add(mainMesh);
+        
+        const crenSlopeMesh = new THREE.Mesh(window.getBPGeo('crenSlope'), window.blueprintMaterials.stone);
+        crenSlopeMesh.name = "crenSlope";
+        group.add(crenSlopeMesh);
+        
+        const crenTopMesh = new THREE.Mesh(window.getBPGeo('crenTop'), window.blueprintMaterials.stone);
+        crenTopMesh.name = "crenTop";
+        group.add(crenTopMesh);
+        
+        scene.add(group);
+        window.wallBlueprintPool.push(group);
+        window.wallBlueprintPoolIdx++;
+        return group;
+    };
+    window.ghostUpdateTimer = null;
+    window.latestGhostStart = null;
+    window.latestGhostEnd = null;
+    window.throttledUpdateWallGhosts = function(startPt, endPt) {
+        if (!startPt || !endPt) return;
+        window.latestGhostStart = startPt;
+        window.latestGhostEnd = endPt;
+        if (!window.ghostUpdateTimer) {
+            window.ghostUpdateTimer = requestAnimationFrame(() => {
+                window.ghostUpdateTimer = null;
+                updateWallGhosts(window.latestGhostStart, window.latestGhostEnd);
+            });
+        }
+    };
+}
+
 function clearWallGhosts() {
-    wallGhosts.forEach(m => { scene.remove(m); disposeHierarchy(m); });
-    wallGhosts = [];
+    if (window.ghostUpdateTimer) {
+        cancelAnimationFrame(window.ghostUpdateTimer);
+        window.ghostUpdateTimer = null;
+    }
+    if (window.wallBlueprintPool) {
+        for (let i = 0; i < window.wallBlueprintPoolIdx; i++) {
+            const obj = window.wallBlueprintPool[i];
+            obj.visible = false;
+            obj.children.forEach(c => {
+                if (c.geometry && c.geometry.isCustomBlueprintGeo) {
+                    c.geometry.dispose();
+                    c.geometry = window.getBPGeo('box');
+                }
+            });
+        }
+        window.wallBlueprintPoolIdx = 0;
+    }
+    if (wallGhosts) {
+        wallGhosts.forEach(m => {
+            if (!m.isPooledBlueprint) {
+                scene.remove(m);
+                if (m.geometry) m.geometry.dispose();
+            }
+        });
+        wallGhosts = [];
+    }
     const tooltip = document.getElementById("wall-cost-tooltip");
     if (tooltip) tooltip.style.display = "none";
 }
@@ -8644,11 +9066,11 @@ function onMouseDown(e) {
             }
             return;
         }
-        // Deselect if only buildings are selected
+        // Deselect if only buildings are selected, unless it's a military building (for rally points)
         if (selectedEntities.length > 0) {
-            console.log("selectedEntities baseSpeed:", selectedEntities.map(e => e.baseSpeed));
             const hasMobileUnit = selectedEntities.some(ent => ent.baseSpeed > 0);
-            if (!hasMobileUnit) {
+            const hasMilBldg = selectedEntities.some(ent => ent.faction === "red" && ["barracks", "mercenary_post", "siegeshop"].includes(ent.type));
+            if (!hasMobileUnit && !hasMilBldg) {
                 selectedEntities.forEach(ent => {
                     if (ent.selectionRing) ent.selectionRing.material.visible = false;
                 });
@@ -8668,13 +9090,20 @@ function onMouseDown(e) {
         );
         raycaster.setFromCamera(mouse, camera);
         const checkMeshes = entities.filter(ent => ent.state !== "dead" && ent.mesh).map(ent => ent.mesh);
-        const intersects = raycaster.intersectObjects(checkMeshes, true);
+        const intersects = raycaster.intersectObjects(checkMeshes, true).filter(h => !h.object.isCosmetic);
         if (intersects.length > 0) {
             let root = intersects[0].object;
             while (root.parent && root.parent !== scene) {
                 root = root.parent;
             }
-            const hitEnt = entities.find(ent => ent.mesh === root);
+            let hitEnt = entities.find(ent => ent.mesh === root);
+            
+            // Redirect clicks from physics tiles to their parent tower
+            if (hitEnt && hitEnt.type === "tower_tile" && hitEnt.parentId) {
+                let parentTower = entities.find(e => e.id === hitEnt.parentId);
+                if (parentTower) hitEnt = parentTower;
+            }
+
             if (hitEnt && hitEnt.faction !== "red" && !isFightMoveQueued) {
                 if (hitEnt.type !== "tree" || selectedEntities.some(e => e.type === "king")) {
                     clickedEnemy = hitEnt;
@@ -8685,6 +9114,8 @@ function onMouseDown(e) {
                 if (hitEnt.isPlanned) {
                     pt.y = getTerrainHeight(pt.x, pt.z);
                 } else {
+                    let targetX = hitEnt.x;
+                    let targetZ = hitEnt.z;
                     if (hitEnt.type === "tower" && hitEnt.childTiles) {
                         let closestTile = null;
                         let minDist = Infinity;
@@ -8696,15 +9127,18 @@ function onMouseDown(e) {
                             }
                         });
                         if (closestTile) {
-                            pt.x = closestTile.x;
-                            pt.z = closestTile.z;
-                        } else {
-                            pt.x = intersects[0].point.x;
-                            pt.z = intersects[0].point.z;
+                            targetX = closestTile.x;
+                            targetZ = closestTile.z;
                         }
-                    } else {
-                        pt.x = intersects[0].point.x;
-                        pt.z = intersects[0].point.z;
+                    }
+                    pt.x = intersects[0].point.x;
+                    pt.z = intersects[0].point.z;
+                    let dx = targetX - pt.x;
+                    let dz = targetZ - pt.z;
+                    let dist = Math.hypot(dx, dz);
+                    if (dist > 0.05) {
+                        pt.x += (dx / dist) * 0.1;
+                        pt.z += (dz / dist) * 0.1;
                     }
                     pt.y = hitEnt.y + (hitEnt.height || 6.0);
                 }
@@ -8712,6 +9146,13 @@ function onMouseDown(e) {
                 if (!hitEnt.isPlanned) {
                     pt.x = intersects[0].point.x;
                     pt.z = intersects[0].point.z;
+                    let dx = hitEnt.x - pt.x;
+                    let dz = hitEnt.z - pt.z;
+                    let dist = Math.hypot(dx, dz);
+                    if (dist > 0.05) {
+                        pt.x += (dx / dist) * 0.1;
+                        pt.z += (dz / dist) * 0.1;
+                    }
                     pt.y = hitEnt.y + (hitEnt.blocks ? hitEnt.blocks.length : hitEnt.height || 6.0);
                 } else {
                     pt.y = getTerrainHeight(pt.x, pt.z);
@@ -8735,6 +9176,14 @@ function onMouseDown(e) {
             rightDragLine.material.color.setHex(rightDragFightMove ? 0xff0000 : 0x00ff00);
             rightDragLine.geometry.setFromPoints(rightDragPath);
             rightDragLine.visible = true;
+        } else {
+            const milBldgs = selectedEntities.filter(b => b.faction === "red" && ["barracks", "mercenary_post", "siegeshop"].includes(b.type));
+            if (milBldgs.length > 0) {
+                milBldgs.forEach(b => {
+                    b.rallyPoint = pt.clone();
+                });
+                showStatusLog("Rally point set!");
+            }
         }
     }
 }
@@ -8787,7 +9236,7 @@ function onMouseMove(e) {
                     (ent.faction === "red" && ent.isPlanned && hasPeasant)
                 )
             ).map(ent => ent.mesh);
-            const intersects = raycaster.intersectObjects(checkMeshes, true);
+            const intersects = raycaster.intersectObjects(checkMeshes, true).filter(h => !h.object.isCosmetic);
             if (intersects.length > 0) {
                 let root = intersects[0].object;
                 while (root.parent && root.parent !== scene) {
@@ -8808,7 +9257,7 @@ function onMouseMove(e) {
             }
             // Wall hover logic
             const wallMeshes = entities.filter(ent => !ent.isDead && !ent.isPlanned && ent.mesh && (ent.type === "wall_column" || ent.type === "wall_ramp" || ent.type === "gatehouse" || ent.type === "keep" || ent.type === "tower")).map(ent => ent.mesh);
-            const wallHits = raycaster.intersectObjects(wallMeshes, true);
+            const wallHits = raycaster.intersectObjects(wallMeshes, true).filter(h => !h.object.isCosmetic);
             if (wallHits.length > 0 && !hoveringEnemy && !hoveringBlueprint) {
                 wallTargetIndicator.position.copy(wallHits[0].point);
                 wallTargetIndicator.position.y += 0.2;
@@ -8831,7 +9280,7 @@ function onMouseMove(e) {
     if (!isDragging && wallDrawMode) {
         const pt = getTerrainIntersection(e.clientX, e.clientY);
         if (pt) {
-            updateWallGhosts(pt, pt);
+            window.throttledUpdateWallGhosts(pt, pt);
         } else {
             clearWallGhosts();
             lastGhostUpdateKey = "";
@@ -8847,7 +9296,7 @@ function onMouseMove(e) {
                     wallFreehandPath.push(pt.clone());
                 }
             }
-            updateWallGhosts(wallDrawStart, pt);
+            window.throttledUpdateWallGhosts(wallDrawStart, pt);
         }
         return;
     }
@@ -9033,7 +9482,7 @@ function onMouseUp(e) {
         isDragging = false;
         wallDrawStart = null;
         if (pt) {
-            updateWallGhosts(pt, pt);
+            window.throttledUpdateWallGhosts(pt, pt);
         } else {
             clearWallGhosts();
         }
@@ -9059,7 +9508,7 @@ function onMouseUp(e) {
         );
         raycaster.setFromCamera(mouse, camera);
         const checkMeshes = entities.filter(ent => ent.state !== "dead" && ent.mesh).map(ent => ent.mesh);
-        const intersects = raycaster.intersectObjects(checkMeshes, true);
+        const intersects = raycaster.intersectObjects(checkMeshes, true).filter(h => !h.object.isCosmetic);
         if (intersects.length > 0) {
             let root = intersects[0].object;
             while (root.parent && root.parent !== scene) {
@@ -9132,7 +9581,7 @@ function onMouseUp(e) {
             selectedEntities = [];
         }
         entities.forEach(ent => {
-            if (ent.state === "dead") return;
+            if (ent.state === "dead" || ent.type === "tower_tile") return;
             if (!ent.mesh || !ent.mesh.visible) return;
             const tempV = new THREE.Vector3(ent.x, ent.y, ent.z);
             tempV.project(camera);
@@ -9170,7 +9619,7 @@ function onMouseWheel(e) {
         updateCameraOffset();
         spacebarScrolled = true;
     } else {
-        zoomFactor = THREE.MathUtils.clamp(zoomFactor + e.deltaY * 0.0015, 0.4, 2.5);
+        zoomFactor = THREE.MathUtils.clamp(zoomFactor + e.deltaY * 0.0015 * Math.max(1.0, zoomFactor * 0.8), 0.15, 8.0);
         updateCameraPosition();
     }
 }
@@ -10014,7 +10463,7 @@ const WEAPON_SVGS = {
     "Slinger": `<span class="btn-icon" style="font-size: 16px;">🪢</span>`,
     "Spy": `<span class="btn-icon" style="font-size: 16px;">🕵️</span>`,
     "Assassin": `<span class="btn-icon" style="font-size: 16px;">🥷</span>`,
-    "Doppelsoldner": `<span class="btn-icon" style="font-size: 16px;">&#x2694;</span>`,
+    "Doppelsoldner": `<span class="btn-icon" style="font-size: 16px;">🪶</span>`,
     "RoyalKnight": `<span class="btn-icon" style="font-size: 16px;">👑</span>`,
     "Peasant": `<svg class="weapon-icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="#f5d0b5" stroke="#8d6e63" stroke-width="1"/><path d="M8,22 L8,14 Q12,12 16,14 L16,22" fill="#a1887f" stroke="#5d4037" stroke-width="1"/></svg>`,
     "King": `<svg class="weapon-icon" viewBox="0 0 24 24"><path d="M4,20 L4,10 L8,14 L12,8 L16,14 L20,10 L20,20 Z" fill="#ffd700" stroke="#b8860b" stroke-width="1"/></svg>`,
@@ -10492,7 +10941,7 @@ function updateSelectionHUD() {
                 "Slinger": "🪢 MERCENARY SLINGER",
                 "Spy": "🕵️ MERCENARY SPY",
                 "Assassin": "🥷 MERCENARY ASSASSIN",
-                "Doppelsoldner": "\uD83D\uDC80 DOPPELSOLDNER",
+                "Doppelsoldner": "🪶 DOPPELSOLDNER",
                 "RoyalKnight": "👑 ROYAL KNIGHT"
             };
             soldierName = wNameMap[first.weapon] || first.weapon.toUpperCase();
@@ -10967,6 +11416,7 @@ function endGame(winner) {
 function restartGame() {
     entities.forEach(ent => {
         if (ent.mesh) scene.remove(ent.mesh);
+        if (ent.healthBar) scene.remove(ent.healthBar);
     });
     projectiles.forEach(p => {
         if (p.mesh) scene.remove(p.mesh);
@@ -11218,8 +11668,8 @@ function gameLoop(timestamp) {
                     if (e.healCooldown > 0) {
                         e.healCooldown -= deltaTime;
                     } else if (e.health < (e.maxHealth || e.maxHp)) {
-                        e.health += 1.0 * deltaTime;
-                        if (e.health > (e.maxHealth || e.maxHp)) e.health = (e.maxHealth || e.maxHp);
+                        e.health += 1;
+                        e.healCooldown = 1.0; // 1 second delay between integer ticks
                     }
                 }
                 if (e.type === "siege_shield") {
@@ -11431,6 +11881,28 @@ function gameLoop(timestamp) {
                 }
             }
         });
+        selectedEntities.forEach(ent => {
+            if (ent.faction === "red" && ent.rallyPoint && ["barracks", "mercenary_post", "siegeshop"].includes(ent.type)) {
+                const rx = ent.rallyPoint.x;
+                const ry = ent.rallyPoint.y + 0.1;
+                const rz = ent.rallyPoint.z;
+                const rs = 0.3;
+                
+                // Draw a yellow cross at the rally point
+                movePos.push(rx - rs, ry, rz - rs, rx + rs, ry, rz + rs);
+                moveCol.push(1, 1, 0, 1, 1, 0);
+                movePos.push(rx - rs, ry, rz + rs, rx + rs, ry, rz - rs);
+                moveCol.push(1, 1, 0, 1, 1, 0);
+                
+                // Draw a line from the building to the rally point
+                const bx = ent.x;
+                const by = ent.y + (ent.height || 2.0);
+                const bz = ent.z;
+                movePos.push(bx, by, bz, rx, ry, rz);
+                moveCol.push(1, 1, 0, 1, 1, 0);
+            }
+        });
+        
         if (moveMarkersLine) {
             moveMarkersLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(movePos, 3));
             moveMarkersLine.geometry.setAttribute('color', new THREE.Float32BufferAttribute(moveCol, 3));
@@ -11445,18 +11917,43 @@ function gameLoop(timestamp) {
                     const r = wStats.range;
                     if (r > 0) {
                         const cx = ent.x;
-                        const cy = ent.y + 0.15; // slightly above ground
+                        const cy = ent.y;
                         const cz = ent.z;
-                        let prevX = cx + r * Math.cos(0);
-                        let prevZ = cz + r * Math.sin(0);
-                        for (let i = 1; i <= numSegments; i++) {
+                        const isRanged = (wStats.type === "bow" || wStats.type === "crossbow" || wStats.type === "catapult");
+                        
+                        let points = [];
+                        for (let i = 0; i < numSegments; i++) {
                             const theta = (i / numSegments) * Math.PI * 2;
-                            const nextX = cx + r * Math.cos(theta);
-                            const nextZ = cz + r * Math.sin(theta);
-                            rangePos.push(prevX, cy, prevZ, nextX, cy, nextZ);
+                            let minR = 0;
+                            let maxR = r * 3.0; // handle downhill height advantage
+                            let bestR = 0;
+                            for (let step = 0; step < 10; step++) {
+                                let midR = (minR + maxR) / 2;
+                                let tx = cx + midR * Math.cos(theta);
+                                let tz = cz + midR * Math.sin(theta);
+                                let ty = getTerrainHeight(tx, tz);
+                                let heightAdv = isRanged ? Math.max(0, cy - ty) : 0;
+                                // 0.1 for attack_ground pseudo-target radius, consistent with handleCombat
+                                let attackRange = r + heightAdv + ent.radius + 0.1;
+                                let dist = Math.hypot(tx - cx, ty - cy, tz - cz);
+                                if (dist <= attackRange) {
+                                    bestR = midR;
+                                    minR = midR;
+                                } else {
+                                    maxR = midR;
+                                }
+                            }
+                            let px = cx + bestR * Math.cos(theta);
+                            let pz = cz + bestR * Math.sin(theta);
+                            let py = getTerrainHeight(px, pz) + 0.25; // float slightly above terrain
+                            points.push({x: px, y: py, z: pz});
+                        }
+                        
+                        for (let i = 0; i < numSegments; i++) {
+                            const p1 = points[i];
+                            const p2 = points[(i + 1) % numSegments];
+                            rangePos.push(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
                             rangeCol.push(1, 0, 0, 1, 0, 0); // fine red line
-                            prevX = nextX;
-                            prevZ = nextZ;
                         }
                     }
                 }
@@ -11577,6 +12074,116 @@ function gameLoop(timestamp) {
     });
     updateParticles(deltaTime);
     if (gameFrameCount % 5 === 0) drawMinimap();
+    
+    // Update Healthbars
+    const hbSettingEl = document.getElementById('healthbar-setting');
+    const hbSetting = hbSettingEl ? hbSettingEl.value : 'default';
+    entities.forEach(ent => {
+        if (ent.type === "tower_tile" || ent.type === "tree" || ent.type === "iron" || ent.type === "stone" || ent.type === "gold") return;
+        if (!ent.mesh || ent.state === "dead") {
+            if (ent.healthBar) {
+                scene.remove(ent.healthBar);
+                ent.healthBar = null;
+            }
+            return;
+        }
+
+        const maxHp = ent.maxHealth || (BASE_STATS[ent.type] && BASE_STATS[ent.type].maxHp) || 100;
+        const currentHp = ent.health || 0;
+        const isHurt = currentHp < maxHp;
+        const isSelected = selectedEntities.includes(ent);
+        
+        let shouldShow = false;
+        if (hbSetting === 'always') shouldShow = true;
+        else if (hbSetting === 'default') shouldShow = (isHurt || isSelected);
+        
+        if (shouldShow) {
+            if (!ent.healthBar) {
+                ent.healthCanvas = document.createElement('canvas');
+                ent.healthCanvas.width = 256;
+                ent.healthCanvas.height = 32;
+                ent.healthTexture = new THREE.CanvasTexture(ent.healthCanvas);
+                ent.healthTexture.minFilter = THREE.NearestFilter;
+                ent.healthTexture.magFilter = THREE.NearestFilter;
+                
+                const mat = new THREE.SpriteMaterial({ map: ent.healthTexture, depthTest: false, transparent: true });
+                ent.healthBar = new THREE.Sprite(mat);
+                ent.healthBar.renderOrder = 1000;
+                
+                // Scale bar based on unit radius (diameter of unit)
+                const diameter = (ent.radius || 0.5) * 2.0;
+                ent.healthBar.scale.set(Math.max(1.0, diameter), Math.max(1.0, diameter) * 0.125, 1);
+                
+                scene.add(ent.healthBar);
+                ent.lastHealthRendered = -1;
+                ent.lastSelectedRendered = null;
+            }
+            
+            ent.healthBar.visible = true;
+            ent.healthBar.position.set(ent.x, ent.y + (ent.height || 1.5) + 0.8, ent.z);
+            
+            // Only redraw canvas if health or selection state changed
+            if (ent.lastHealthRendered !== currentHp || ent.lastSelectedRendered !== isSelected) {
+                const ctx = ent.healthCanvas.getContext('2d');
+                const w = ent.healthCanvas.width;
+                const h = ent.healthCanvas.height;
+                
+                ctx.clearRect(0, 0, w, h);
+                
+                // Background
+                ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                ctx.fillRect(0, 0, w, h);
+                
+                // Border color based on faction
+                let teamColor = "#ffeb3b";
+                if (ent.faction === "red") teamColor = "#d32f2f";
+                else if (ent.faction === "blue") teamColor = "#1976d2";
+                
+                ctx.strokeStyle = teamColor;
+                ctx.lineWidth = isSelected ? 8 : 4;
+                ctx.strokeRect(0, 0, w, h);
+                
+                const innerX = isSelected ? 4 : 2;
+                const innerY = isSelected ? 4 : 2;
+                const innerW = w - innerX * 2;
+                const innerH = h - innerY * 2;
+                
+                const hpPerSliver = 25;
+                const totalSlivers = Math.ceil(maxHp / hpPerSliver);
+                
+                // Gap between slivers
+                const gap = totalSlivers > 64 ? 0 : (totalSlivers > 32 ? 1 : 2);
+                const sliverWidth = (innerW - (totalSlivers - 1) * gap) / totalSlivers;
+                const currentSlivers = Math.max(0, currentHp) / hpPerSliver;
+                
+                for (let i = 0; i < Math.ceil(currentSlivers); i++) {
+                    let color = "#4caf50"; // Green
+                    if (i === 0) color = "#f44336"; // Red
+                    else if (i === 1) color = "#ff9800"; // Orange
+                    else if (i === 2) color = "#ffeb3b"; // Yellow
+                    
+                    ctx.fillStyle = color;
+                    
+                    let drawWidth = sliverWidth;
+                    if (i === Math.floor(currentSlivers)) {
+                        drawWidth = sliverWidth * (currentSlivers % 1);
+                    }
+                    
+                    ctx.fillRect(innerX + i * (sliverWidth + gap), innerY, drawWidth, innerH);
+                }
+                
+                ent.healthTexture.needsUpdate = true;
+                ent.lastHealthRendered = currentHp;
+                ent.lastSelectedRendered = isSelected;
+            }
+            
+        } else {
+            if (ent.healthBar) {
+                ent.healthBar.visible = false;
+            }
+        }
+    });
+
     renderer.render(scene, camera);
     requestAnimationFrame(gameLoop);
 }
@@ -11705,6 +12312,39 @@ function triggerDeath(victim, killer) {
             const mask = killer.mesh.getObjectByName("assassinMask");
             if (mask) mask.visible = true;
         }
+
+        // Anti-wall cheese for enemy AI
+        if (killer.faction === "blue" && victim.faction === "red") {
+            const isWall = (victim.type === "wall_column" || victim.type === "gatehouse" || victim.type === "wall_ramp" || victim.type === "tower" || victim.material === "stone");
+            if (isWall) {
+                killer.ignoreWallsTimer = 10.0;
+                
+                // Immediately target nearest valid player unit
+                let bestTarget = null;
+                let minDist = Infinity;
+                entities.forEach(e => {
+                    if (e.faction === "red" && e.state !== "dead") {
+                        const isEnemyStone = (e.material === "stone" || e.type === "wall_column" || e.type === "gatehouse" || e.type === "wall_ramp" || e.type === "tower");
+                        if (!isEnemyStone) {
+                            const d = Math.hypot(e.x - killer.x, e.z - killer.z);
+                            if (d < minDist) {
+                                minDist = d;
+                                bestTarget = e;
+                            }
+                        }
+                    }
+                });
+                
+                if (bestTarget) {
+                    killer.targetEntity = null; // Free up targetEntity so handleCombat auto-acquires this priority
+                    killer.targetPosition = new THREE.Vector3(bestTarget.x, bestTarget.y, bestTarget.z);
+                    killer.fightMoveDestination = killer.targetPosition.clone();
+                    killer.state = "fightmove";
+                    killer.path = null;
+                    killer.pathCooldown = 0;
+                }
+            }
+        }
     }
     if (victim.type === "tree" && killer && killer.type === "king") {
         resources.wood += 20;
@@ -11715,10 +12355,14 @@ function triggerDeath(victim, killer) {
     spawnDeathSplatter(victim.x, victim.y, victim.z, victim.radius);
     needsPathGridUpdate = true;
     scene.remove(victim.mesh);
+    if (victim.healthBar) scene.remove(victim.healthBar);
     disposeHierarchy(victim.mesh);
     const index = entities.indexOf(victim);
     if (index > -1) {
         // entities.splice(index, 1); // Deferred to end of frame to prevent iteration crashes
+    }
+    if (victim.type === "wall_column" || victim.type === "gatehouse" || victim.type === "tower") {
+        updateWallNeighborsAround([{x: victim.x, z: victim.z}]);
     }
     if (victim.type === "king") {
         endGame(victim.faction === "red" ? "blue" : "red");
@@ -12103,7 +12747,7 @@ function getWallPoints(startPt, endPt, mode) {
     const sz = Math.round(startPt.z);
     const ex = Math.round(endPt.x);
     const ez = Math.round(endPt.z);
-    const thickness = parseInt(document.getElementById("wall-thickness")?.value) || 1;
+    const thickness = (mode === "tower" || mode === "gatehouse") ? 1 : (parseInt(document.getElementById("wall-thickness")?.value) || 1);
     const addPt = (x, z) => {
         if (thickness === 1) {
             pts.push({x, z});
@@ -12208,11 +12852,46 @@ function updateWallGhosts(startPt, endPt) {
     const material = materialElem ? materialElem.value : "stone";
     const crenulatedElem = document.getElementById("chk-wall-crenulated");
     const doCrenulate = crenulatedElem ? crenulatedElem.checked : false;
-    let key = `${wallDrawMode}_${sx}_${sz}_${ex}_${ez}_${height}_${slopeDeg}_${material}_${doCrenulate}`;
+    const thickness = parseInt(document.getElementById("wall-thickness")?.value) || 1;
+    let key = `${wallDrawMode}_${sx}_${sz}_${ex}_${ez}_${height}_${slopeDeg}_${material}_${doCrenulate}_${thickness}`;
     if (wallDrawMode === "freehand") key += `_${wallFreehandPath.length}`;
     if (key === lastGhostUpdateKey && wallGhosts.length > 0) return;
     lastGhostUpdateKey = key;
     clearWallGhosts();
+
+    const oldWallMap = new Map();
+    const overlapWallMap = new Map();
+    const blockingBuildings = [];
+    const gatehouses = [];
+    
+    for (let i = 0; i < entities.length; i++) {
+        const o = entities[i];
+        if (BUILDING_TYPES[o.type] && o.type !== "keep" && o.type !== "gatehouse" && o.type !== "wall_column" && o.type !== "wall_ramp" && o.type !== "tower") {
+            blockingBuildings.push(o);
+        }
+        if (o.type === "gatehouse" && !o.isPlanned) {
+            gatehouses.push(o);
+        }
+        if (o.isPlanned) continue;
+        
+        const k = `${o.x},${o.z}`;
+        if (o.type === "wall_column" || o.type === "gatehouse") {
+            oldWallMap.set(k, o);
+        }
+        if (o.type === "wall_column" || o.type === "wall_ramp" || o.type === "gatehouse") {
+            overlapWallMap.set(k, o);
+        }
+        if (o.type === "tower" && o.footprint) {
+            for (let j = 0; j < o.footprint.length; j++) {
+                const fKey = `${o.footprint[j].x},${o.footprint[j].z}`;
+                oldWallMap.set(fKey, o);
+                overlapWallMap.set(fKey, o);
+            }
+        }
+    }
+
+    const baseMat = window.blueprintMaterials[material] || window.blueprintMaterials.stone;
+
     if (wallDrawMode === "delete" || wallDrawMode === "delete_building") {
         const minX = Math.min(Math.round(startPt.x), Math.round(endPt.x));
         const maxX = Math.max(Math.round(startPt.x), Math.round(endPt.x));
@@ -12220,9 +12899,7 @@ function updateWallGhosts(startPt, endPt) {
         const maxZ = Math.max(Math.round(startPt.z), Math.round(endPt.z));
         const dimX = Math.max(1, maxX - minX + 1);
         const dimZ = Math.max(1, maxZ - minZ + 1);
-        const mat = new THREE.MeshBasicMaterial({ color: 0xd32f2f, transparent: true, opacity: 0.5 });
-        const geo = new THREE.BoxGeometry(dimX, 0.5, dimZ);
-        const mesh = new THREE.Mesh(geo, mat);
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(dimX, 0.5, dimZ), window.blueprintMaterials.delete);
         const cx = minX + dimX/2 - 0.5;
         const cz = minZ + dimZ/2 - 0.5;
         const cy = getFloorHeight({faction: "red", y:100}, cx, cz).y;
@@ -12231,6 +12908,7 @@ function updateWallGhosts(startPt, endPt) {
         wallGhosts.push(mesh);
         return;
     }
+
     const pts = getWallPoints(startPt, endPt, wallDrawMode);
     const ptSet = new Set(pts.map(p => `${p.x},${p.z}`));
     pts.forEach(p => {
@@ -12238,10 +12916,7 @@ function updateWallGhosts(startPt, endPt) {
         p.isOuter = !isInner;
         p.isCren = (doCrenulate || wallDrawMode === 'tower') && p.isOuter && wallDrawMode !== 'gatehouse';
     });
-    const matColor = material === "wood" ? 0xd2a679 : 0x00ff00;
-    const mat = new THREE.MeshBasicMaterial({ color: matColor, transparent: true, opacity: 0.4 });
-    const blockingBuildings = entities.filter(o => BUILDING_TYPES[o.type] && o.type !== "keep" && o.type !== "gatehouse" && o.type !== "wall_column" && o.type !== "wall_ramp" && o.type !== "tower");
-    const gatehouses = entities.filter(o => o.type === "gatehouse" && !o.isPlanned);
+
     if (wallDrawMode === "gatehouse" || wallDrawMode === "tower") {
         let minX = Math.min(Math.round(startPt.x), Math.round(endPt.x));
         let maxX = Math.max(Math.round(startPt.x), Math.round(endPt.x));
@@ -12283,14 +12958,16 @@ function updateWallGhosts(startPt, endPt) {
         const ledger = getLedger("red");
         const available = material === "stone" ? ledger.stone.spendable : ledger.wood.spendable;
         let isPoor = false;
+        let finalMat = baseMat;
         if (isBlocked) {
-            mat.color.setHex(0xff0000);
+            finalMat = window.blueprintMaterials.blocked;
         } else if (totalCost > available) {
-            mat.color.setHex(0xff8c00); // Orange
+            finalMat = window.blueprintMaterials.poor;
             isPoor = true;
         } else if (allOverlaps.length > 0) {
-            mat.color.setHex(0xffff00);
+            finalMat = window.blueprintMaterials.overlap;
         }
+        
         const tooltip = document.getElementById("wall-cost-tooltip");
         if (tooltip) {
             tooltip.style.display = "block";
@@ -12299,19 +12976,24 @@ function updateWallGhosts(startPt, endPt) {
             tooltip.style.color = isPoor ? "#ff5252" : "white";
             tooltip.innerHTML = `Cost: ${totalCost} ${material === "stone" ? "Stone" : "Wood"}`;
         }
+
         if (wallDrawMode === "tower") {
             pts.forEach(p => {
-                const geo = new THREE.BoxGeometry(1.0, height + 2, 1.0);
-                const mesh = new THREE.Mesh(geo, mat);
+                const finalObj = window.getPooledBlueprintMesh();
+                const mainMesh = finalObj.children[0];
+                mainMesh.geometry = window.getBPGeo('box');
+                mainMesh.scale.set(1.0, height + 2, 1.0);
+                mainMesh.material = finalMat;
+                finalObj.children[1].visible = false;
+                finalObj.children[2].visible = false;
                 const floorData = getFloorHeight({faction: "red", y:100}, p.x, p.z);
-                mesh.position.set(p.x, floorData.y + (height + 2)/2, p.z);
-                scene.add(mesh);
-                wallGhosts.push(mesh);
+                finalObj.position.set(p.x, floorData.y + (height + 2)/2, p.z);
+                wallGhosts.push(finalObj);
             });
             return;
         }
-        const geo = new THREE.BoxGeometry(dimX, height, dimZ);
-        const mesh = new THREE.Mesh(geo, mat);
+        
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(dimX, height, dimZ), finalMat);
         const cx = minX + dimX/2 - 0.5;
         const cz = minZ + dimZ/2 - 0.5;
         const cy = getFloorHeight({faction: "red", y:100}, cx, cz).y;
@@ -12320,6 +13002,7 @@ function updateWallGhosts(startPt, endPt) {
         wallGhosts.push(mesh);
         return;
     }
+
     const startRamp = { x: Math.round(startPt.x), z: Math.round(startPt.z) };
     const endRamp = { x: Math.round(endPt.x), z: Math.round(endPt.z) };
     const totalDist = Math.hypot(endRamp.x - startRamp.x, endRamp.z - startRamp.z);
@@ -12331,16 +13014,19 @@ function updateWallGhosts(startPt, endPt) {
     const pivotX = startRamp.x - dirX * 0.5;
     const pivotZ = startRamp.z - dirZ * 0.5;
     let existingHeight = 0;
-    const startOldWall = entities.find(o => (o.type === "wall_column" || o.type === "gatehouse") && !o.isPlanned && Math.hypot(o.x - startRamp.x, o.z - startRamp.z) < 0.5);
+    
+    const startOldWall = oldWallMap.get(`${startRamp.x},${startRamp.z}`);
     if (startOldWall) {
         existingHeight = startOldWall.type === "wall_column" && startOldWall.blocks ? startOldWall.blocks.length : startOldWall.height;
     }
     const startRoofY = getTerrainHeight(startRamp.x, startRamp.z) + Math.max(height, existingHeight);
+    
     let endExistingHeight = -1;
-    const endOldWall = entities.find(o => (o.type === "wall_column" || o.type === "gatehouse") && !o.isPlanned && Math.hypot(o.x - endRamp.x, o.z - endRamp.z) < 1.5);
-    if (endOldWall) {
-        endExistingHeight = endOldWall.type === "wall_column" && endOldWall.blocks ? endOldWall.blocks.length : endOldWall.height;
+    const endOldWallEntity = entities.find(o => (o.type === "wall_column" || o.type === "gatehouse") && !o.isPlanned && Math.hypot(o.x - endRamp.x, o.z - endRamp.z) < 1.5);
+    if (endOldWallEntity) {
+        endExistingHeight = endOldWallEntity.type === "wall_column" && endOldWallEntity.blocks ? endOldWallEntity.blocks.length : endOldWallEntity.height;
     }
+
     let totalCost = pts.reduce((sum, p) => {
         let actualH = height;
         if (wallDrawMode === "ramp") {
@@ -12357,17 +13043,18 @@ function updateWallGhosts(startPt, endPt) {
             else if (Math.abs(dist - totalDist) < 0.5 && endExistingHeight >= 0 && Math.abs((exactRoofY - floorY) - endExistingHeight) <= 1.0) actualH = endExistingHeight;
             else actualH = exactRoofY - floorY;
         } else if (height === 0) {
-            actualH = 0;
+            actualH = 0.1;
         }
         return sum + Math.max(1, Math.round(actualH) + (p.isCren ? 1 : 0));
     }, 0);
+
     const ledger = getLedger("red");
     const available = material === "stone" ? ledger.stone.spendable : ledger.wood.spendable;
     let isPoor = false;
     if (totalCost > available) {
-        mat.color.setHex(0xff8c00);
         isPoor = true;
     }
+    
     const tooltip = document.getElementById("wall-cost-tooltip");
     if (tooltip) {
         tooltip.style.display = "block";
@@ -12376,7 +13063,9 @@ function updateWallGhosts(startPt, endPt) {
         tooltip.style.color = isPoor ? "#ff5252" : "white";
         tooltip.innerHTML = `Cost: ${totalCost} ${material === "stone" ? "Stone" : "Wood"}`;
     }
+
     pts.forEach(p => {
+        if (p.skip) return;
         const blockingBuilding = blockingBuildings.find(o => {
             if (o.type === "tower" && o.footprint) {
                 return o.footprint.some(f => Math.abs(f.x - p.x) < 0.5 && Math.abs(f.z - p.z) < 0.5);
@@ -12390,10 +13079,12 @@ function updateWallGhosts(startPt, endPt) {
             const hd = (o.dimZ !== undefined ? o.dimZ : ((o.radius || 0.5) * 2)) / 2;
             return p.x >= o.x - hw && p.x <= o.x + hw && p.z >= o.z - hd && p.z <= o.z + hd;
         });
+        
         let actualH = height;
         let isBlockRamp = false;
         let exactRoofY = startRoofY;
         let isSidewalk = false;
+        
         if (wallDrawMode === "ramp") {
             const relativeDist = (p.x - startRamp.x)*dirX + (p.z - startRamp.z)*dirZ;
             if (relativeDist < -0.1) return;
@@ -12413,11 +13104,19 @@ function updateWallGhosts(startPt, endPt) {
             }
         } else if (height === 0) {
             isSidewalk = true;
-            actualH = 0;
+            actualH = 0.1;
         }
-        let geo;
+
+        const finalObj = window.getPooledBlueprintMesh();
+        const mainMesh = finalObj.children[0];
+        const crenSlopeMesh = finalObj.children[1];
+        const crenTopMesh = finalObj.children[2];
+        
+        let baseH = isBlockRamp ? Math.max(3.0, actualH + 2.0) : actualH;
+        
         if (isSidewalk) {
-            geo = new THREE.BoxGeometry(1.0, 0.2, 1.0);
+            const geo = new THREE.BoxGeometry(1.0, 0.2, 1.0);
+            geo.isCustomBlueprintGeo = true;
             const pos = geo.attributes.position;
             const floorY = getTerrainHeight(p.x, p.z);
             for (let i = 0; i < pos.count; i++) {
@@ -12427,88 +13126,72 @@ function updateWallGhosts(startPt, endPt) {
                 pos.setY(i, (terrainY - floorY) + (pos.getY(i) > 0 ? 0.2 : 0));
             }
             geo.computeVertexNormals();
+            mainMesh.geometry = geo;
+            mainMesh.scale.set(1, 1, 1);
         } else {
-            let baseH = isBlockRamp ? Math.max(3.0, actualH + 2.0) : actualH;
-            if (actualH === 0 && !isBlockRamp) {
-                geo = new THREE.BoxGeometry(1.0, 0.2, 1.0);
+            if (actualH <= 0.11 && !isBlockRamp) {
+                mainMesh.geometry = window.getBPGeo('box');
+                mainMesh.scale.set(1.0, 0.2, 1.0);
             } else {
-                geo = new THREE.BoxGeometry(1.05, baseH + 0.05, 1.05);
-            }
-            if (isBlockRamp) {
-                const pos = geo.attributes.position;
-                for (let i = 0; i < pos.count; i++) {
-                    if (pos.getY(i) > 0) {
-                        const vx = pos.getX(i);
-                        const vz = pos.getZ(i);
-                        const dot = vx * dirX + vz * dirZ;
-                        const extraH = dot * Math.tan(Math.abs(slopeDeg) * -1 * Math.PI / 180);
-                        const desiredLocalY = (actualH / 2) + extraH;
-                        pos.setY(i, desiredLocalY);
+                if (isBlockRamp) {
+                    const geo = new THREE.BoxGeometry(1.05, baseH + 0.05, 1.05);
+                    geo.isCustomBlueprintGeo = true;
+                    const pos = geo.attributes.position;
+                    for (let i = 0; i < pos.count; i++) {
+                        if (pos.getY(i) > 0) {
+                            const vx = pos.getX(i);
+                            const vz = pos.getZ(i);
+                            const dot = vx * dirX + vz * dirZ;
+                            const extraH = dot * Math.tan(Math.abs(slopeDeg) * -1 * Math.PI / 180);
+                            const desiredLocalY = (actualH / 2) + extraH;
+                            pos.setY(i, desiredLocalY);
+                        }
                     }
+                    geo.computeVertexNormals();
+                    mainMesh.geometry = geo;
+                    mainMesh.scale.set(1, 1, 1);
+                } else {
+                    mainMesh.geometry = window.getBPGeo('box');
+                    mainMesh.scale.set(1.05, baseH + 0.05, 1.05);
                 }
-                geo.computeVertexNormals();
             }
         }
-        const oldWall = entities.find(o => {
-            if (o.isPlanned) return false;
-            if (o.type === "wall_column" || o.type === "gatehouse") {
-                return o.x === p.x && o.z === p.z;
-            }
-            if (o.type === "tower" && o.footprint) {
-                return o.footprint.some(f => Math.abs(f.x - p.x) < 0.5 && Math.abs(f.z - p.z) < 0.5);
-            }
-            return false;
-        });
-        let pMat = mat;
+
+        let pMat = baseMat;
         if (blockingBuilding || blockingGatehouse) {
-            pMat = mat.clone();
-            pMat.color.setHex(0xff0000);
-        } else if (oldWall) {
-            pMat = mat.clone();
-            pMat.color.setHex(0xffff00);
+            pMat = window.blueprintMaterials.blocked;
+        } else if (isPoor) {
+            pMat = window.blueprintMaterials.poor;
+        } else if (oldWallMap.has(`${p.x},${p.z}`)) {
+            pMat = window.blueprintMaterials.overlap;
+        } else if (overlapWallMap.has(`${p.x},${p.z}`)) {
+            pMat = window.blueprintMaterials.overlap;
         }
-        let finalObj;
+
+        mainMesh.material = pMat;
+        
         if (p.isCren && !isBlockRamp && actualH > 0) {
-            finalObj = new THREE.Group();
-            const mesh = new THREE.Mesh(geo, pMat);
-            mesh.position.y = actualH/2;
-            finalObj.add(mesh);
-            const crenSlope = new THREE.BoxGeometry(1.0, 0.5, 1.0);
-            const pos = crenSlope.attributes.position;
-            for(let i=0; i<pos.count; i++) {
-                if (pos.getY(i) > 0) {
-                    pos.setX(i, pos.getX(i) * 0.5);
-                    pos.setZ(i, pos.getZ(i) * 0.5);
-                }
-            }
-            crenSlope.computeVertexNormals();
-            const meshSlope = new THREE.Mesh(crenSlope, pMat);
-            meshSlope.position.y = actualH + 0.25;
-            finalObj.add(meshSlope);
-            const crenTop = new THREE.BoxGeometry(0.5, 1.0, 0.5);
-            const meshTop = new THREE.Mesh(crenTop, pMat);
-            meshTop.position.y = actualH + 0.5;
-            finalObj.add(meshTop);
+            crenSlopeMesh.visible = true;
+            crenTopMesh.visible = true;
+            crenSlopeMesh.material = pMat;
+            crenTopMesh.material = pMat;
+            
+            mainMesh.position.y = actualH/2;
+            crenSlopeMesh.position.y = actualH + 0.25;
+            crenTopMesh.position.y = actualH + 0.5;
         } else {
-            finalObj = new THREE.Mesh(geo, pMat);
-            if (actualH === 0 && !isSidewalk) finalObj.position.y = 0;
-            else finalObj.position.y = actualH/2;
+            crenSlopeMesh.visible = false;
+            crenTopMesh.visible = false;
+            if (actualH <= 0.11) mainMesh.position.y = 0;
+            else mainMesh.position.y = actualH/2;
         }
+        
         if (actualH === 0 && !isSidewalk) {
             finalObj.position.set(p.x, getTerrainHeight(p.x, p.z), p.z);
         } else {
             const cy = getTerrainHeight(p.x, p.z);
-            finalObj.position.x = p.x;
-            finalObj.position.y += cy;
-            finalObj.position.z = p.z;
+            finalObj.position.set(p.x, cy, p.z);
         }
-        const overlapWall = entities.find(o => (o.type === "wall_column" || o.type === "wall_ramp" || o.type === "gatehouse") && !o.isPlanned && o.x === p.x && o.z === p.z);
-        if (overlapWall) {
-            finalObj.traverse(c => {
-                if (c.material) c.material.color.setHex(0xffff00);
-            });
-        }
-        scene.add(finalObj);
         wallGhosts.push(finalObj);
     });
 }
@@ -12600,10 +13283,7 @@ function commitWallDraw(startPt, endPt) {
         let allOverlaps = [];
         if (wallDrawMode === "gatehouse") {
             allOverlaps = entities.filter(o => {
-                if (!(o.type === "wall_column" || o.type === "wall_ramp" || o.type === "gatehouse" || o.type === "tower")) return false;
-                if (o.type === "tower" && o.footprint) {
-                    return o.footprint.some(f => f.x >= minX - 0.5 && f.x <= maxX + 0.5 && f.z >= minZ - 0.5 && f.z <= maxZ + 0.5);
-                }
+                if (!(o.type === "wall_column" || o.type === "wall_ramp" || o.type === "gatehouse")) return false;
                 return o.x >= minX - 0.5 && o.x <= maxX + 0.5 && o.z >= minZ - 0.5 && o.z <= maxZ + 0.5;
             });
         } else if (wallDrawMode === "tower") {
@@ -12724,7 +13404,7 @@ function commitWallDraw(startPt, endPt) {
                 }
                 if (p.exactRoofY < floorY - 0.5) p.skip = true;
             } else if (height === 0) {
-                p.actualH = 0;
+                p.actualH = 0.1;
             }
         });
         let totalCost = pts.reduce((sum, p) => {
@@ -12797,7 +13477,7 @@ function commitWallDraw(startPt, endPt) {
                 e.isRamp = false;
             }
             e.blocks = [];
-            for(let i=0; i<e.height; i++) e.blocks.push({ hp: 100 });
+            for(let i=0; i<Math.floor(e.height); i++) e.blocks.push({ hp: 100 });
             e.maxHp = Math.max(100, e.height * 100);
             e.maxHealth = e.maxHp;
             e.health = 1;
@@ -12809,6 +13489,7 @@ function commitWallDraw(startPt, endPt) {
             scene.add(e.mesh);
         });
     }
+    updateWallNeighborsAround(pts);
     needsPathGridUpdate = true;
     updateUI();
     showStatusLog("Wall plans placed!");
