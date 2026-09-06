@@ -21,10 +21,10 @@ const WEAPONS = {
     "Short Bow":{ dmg: 10, cd: 1.0, range: 25.0, speedMod: -0.10, type: "bow",    prepTime: 1.0, desc: "Short Bow (1s wind-up, 1s wind-down)" },
     "Longbow":  { dmg: 13, cd: 1.0, range: 37, speedMod: -0.15, type: "bow",    prepTime: 2.0, desc: "Longbow (2s wind-up, 1s wind-down)" },
     "Crossbow": { dmg: 21, cd: 5.0, range: 30.0, speedMod: -0.20, type: "crossbow", armorPen: 8, reloadTime: 5.0, desc: "Crossbow (Needs 5s standstill after shot to reload)" },
-    "Ballista": { dmg: 52, cd: 10.0, range: 50.0, speedMod: -0.50, type: "crossbow", reloadTime: 10.0, desc: "Ballista (10s reload, no dmg to stone)" },
-    "Catapult": { dmg: 300, cd: 10.0, range: 50.0, speedMod: -0.50, type: "catapult", prepTime: 10.0, desc: "Catapult (10s prep, AOE, friendly fire)" },
-    "Trebuchet": { dmg: 510, cd: 15.0, range: 60.0, speedMod: -0.50, type: "catapult", prepTime: 15.0, desc: "Trebuchet (15s prep, High Arc, AOE)" },
-    "Mangonel": { dmg: 50, cd: 10.0, range: 50.0, speedMod: -0.50, type: "catapult", prepTime: 10.0, desc: "Mangonel (10s prep, throws 10 rocks)" },
+    "Ballista": { dmg: 52, cd: 7.5, range: 50.0, speedMod: -0.50, type: "crossbow", reloadTime: 7.5, desc: "Ballista (7.5s reload, no dmg to stone)" },
+    "Catapult": { dmg: 300, cd: 7.5, range: 50.0, speedMod: -0.50, type: "catapult", prepTime: 7.5, desc: "Catapult (7.5s prep, AOE, friendly fire)" },
+    "Trebuchet": { dmg: 510, cd: 10.0, range: 60.0, speedMod: -0.50, type: "catapult", prepTime: 10.0, desc: "Trebuchet (10s prep, High Arc, AOE)" },
+    "Mangonel": { dmg: 50, cd: 7.5, range: 50.0, speedMod: -0.50, type: "catapult", prepTime: 7.5, desc: "Mangonel (7.5s prep, throws 10 rocks)" },
     "Dagger": { dmg: 15, cd: 0.8, range: 1.2, type: "melee", desc: "Assassin weapon, high burst" }
 };
 const ARMORS = {
@@ -48,7 +48,7 @@ const BASE_STATS = {
     king:    { maxHp: 500, speed: 2.0, armor: 5, radius: 0.4, height: 2.0, color: 0xffd700 }, // Gold armor King
     peasant: { maxHp: 50,  speed: 2.5, armor: 0, radius: 0.4, height: 1.2, color: 0x8d6e63 }, // Simple peasant
     soldier: { maxHp: 100, speed: 2.5, armor: 0, radius: 0.5, height: 1.6, color: 0x78909c }, // Trained soldier base
-    siege_shield: { maxHp: 300, speed: 1.0, armor: 7, radius: 0.5, height: 1.2, color: 0xcfd8dc },
+    siege_shield: { maxHp: 500, speed: 1.0, armor: 7, radius: 0.5, height: 1.2, color: 0xcfd8dc },
     siege_ballista: { maxHp: 200, speed: 0.75, armor: 0, radius: 0.6, height: 1.5, color: 0x8b5a2b },
     siege_catapult: { maxHp: 200, speed: 0.75, armor: 0, radius: 1.0, height: 1.5, color: 0x8b5a2b },
     siege_mangonel: { maxHp: 200, speed: 0.75, armor: 0, radius: 1.0, height: 1.5, color: 0x4a3219 },
@@ -63,7 +63,7 @@ const BUILDING_TYPES = {
     mercenary_post:{ name: "Mercenary Post", radius: 2.0, height: 2.4, color: 0x4a148c, maxHp: 500, peasantCap: 0, cost: 20, goldCost: 0, armor: 5 },
     farm:        { name: "Farm",         radius: 2.0, height: 1.5, color: 0x2e7d32, maxHp: 250,  peasantCap: 0,  cost: 10, goldCost: 0, armor: 5 },
     woodcutter:  { name: "Woodcutter",   radius: 1.5, height: 2.0, color: 0x8d6e63, maxHp: 250,  peasantCap: 0,  cost: 5,  goldCost: 0, armor: 5 },
-    mine:        { name: "Mine",         radius: 2.0, height: 2.5, color: 0x455a64, maxHp: 300,  peasantCap: 0,  cost: 10, goldCost: 0, armor: 5 },
+    mine:        { name: "Mine",         radius: 2.0, height: 2.5, color: 0x455a64, maxHp: 300,  peasantCap: 0,  cost: 20, goldCost: 0, armor: 5 },
     poleturner:  { name: "Poleturner",   radius: 1.5, height: 2.2, color: 0xa1887f, maxHp: 300,  peasantCap: 0,  cost: 10, goldCost: 100, armor: 5 },
     gruntshop:   { name: "Gruntshop",    radius: 1.5, height: 2.2, color: 0x8d6e63, maxHp: 300,  peasantCap: 0,  cost: 20, goldCost: 100, armor: 5 },
     blacksmith:  { name: "Blacksmith",   radius: 1.5, height: 2.6, color: 0x37474f, maxHp: 400,  peasantCap: 0,  cost: 20, goldCost: 200, armor: 5 },
@@ -161,18 +161,26 @@ let currentDifficulty = null;
 function startMusic() {
     let newPlaylist = [];
     if (gameDifficulty === 'test') {
-        newPlaylist = ['music/Crows Over the Fields (Test Mode).mp3'];
+        newPlaylist = [
+            'music/Crows Over the Fields (Test Mode).mp3',
+            'music/Crows Over the Fields notreally nice menu.mp3',
+            'music/Three Pillars of the Void.mp3'
+        ];
     } else if (gameDifficulty === 'easy') {
         newPlaylist = [
             'music/Crows Over the Fields (Easy Mode).mp3',
-            'music/Crows Over the Fields (Test Mode).mp3'
+            'music/Crows Over the Fields (Test Mode).mp3',
+            'music/Crows Over the Fields notreally nice menu.mp3',
+            'music/Three Pillars of the Void.mp3'
         ];
     } else if (gameDifficulty === 'medium') {
         newPlaylist = [
             'music/Crows Over the Fields (Medium1).mp3',
             'music/Crows Over the Fields (Medium2).mp3',
             'music/Crows Over the Fields (Easy Mode).mp3',
-            'music/Crows Over the Fields (Test Mode).mp3'
+            'music/Crows Over the Fields (Test Mode).mp3',
+            'music/Crows Over the Fields notreally nice menu.mp3',
+            'music/Three Pillars of the Void.mp3'
         ];
     } else if (gameDifficulty === 'hard') {
         newPlaylist = [
@@ -180,7 +188,10 @@ function startMusic() {
             'music/Crows Over the Fields (Medium2).mp3',
             'music/Crows Over the Fields (Medium1).mp3',
             'music/Crows Over the Fields (Easy Mode).mp3',
-            'music/Crows Over the Fields (Test Mode).mp3'
+            'music/Crows Over the Fields (Test Mode).mp3',
+            'music/Crows Over the Fields notreally nice menu.mp3',
+            'music/Three Pillars of the Void.mp3',
+            'music/6 Untitled.mp3'
         ];
     }
 
@@ -304,8 +315,8 @@ function rebuildBuildingGrid() {
         spatialGrid[i].length = 0;
     }
     entities.forEach(e => {
-        if (e.isDead || e.state === "dead" || (e.isPlanned && e.resourcesDelivered === 0)) return;
-        if (e.type === "wall_column" || e.type === "gatehouse" || e.type === "keep" ||
+        if (e.isDead || e.state === "dead") return;
+        if (e.type === "wall_column" || e.type === "gatehouse" || e.type === "keep" || e.type === "tower" || e.type === "tower_tile" || e.type === "wall_ramp" ||
            (e.baseSpeed === 0 && e.type !== "tree" && e.type !== "iron" && e.type !== "stone" && e.type !== "gold")) {
             // Buildings can span multiple cells. Add them to all cells they intersect.
             const hw = (e.dimX !== undefined ? e.dimX : (e.radius ? e.radius * 2 : 1)) / 2;
@@ -359,7 +370,11 @@ let selectedEntities = [];
 let controlGroups = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [], 9: [], 0: [] };
 let isDragging = false;
 let attackGroundMode = false;
+let helpMode = false;
 let attackGroundIndicator = null;
+let helpGroundIndicator = null;
+let fightMoveIndicator = null;
+let helpHoverIndicator = null;
 let moveMarkersLine = null;
 let rangeMarkersLine = null;
 const dragStart = new THREE.Vector2();
@@ -465,6 +480,7 @@ function getFloorHeight(unit, nextX, nextZ) {
     const localBuildings = buildingGrid[cellIdx];
     
     if (localBuildings) localBuildings.forEach(e => {
+        if (e.isPlanned && e.resourcesDelivered === 0) return;
         const colRad = unit.radius || 0.1;
         if (e.type === "keep") {
             const absX = Math.abs(nextX - e.x);
@@ -574,7 +590,7 @@ function getFloorHeight(unit, nextX, nextZ) {
                                 else ejectZ = e.z + hd + (colRad + 0.1);
                             }
                         }
-                    } else if (!shouldEject && isTouching && (e.type === "tower_tile" || e.type === "gatehouse" || e.type === "keep")) {
+                    } else if (!shouldEject && (isInside || distSq < 0.04) && (e.type === "tower_tile" || e.type === "gatehouse" || e.type === "keep")) {
                         if (unit.y > floorHeight) {
                             floorHeight = unit.y; // Sustains current altitude for elevators/passages
                             onWall = true;
@@ -714,6 +730,16 @@ document.getElementById("btn-close-buildings-list").addEventListener("click", ()
     document.getElementById("buildings-list-menu").style.display = "none";
     document.getElementById("pause-menu").style.display = "flex";
 });
+
+document.getElementById("btn-pro-tips").addEventListener("click", () => {
+    document.getElementById("pause-menu").style.display = "none";
+    document.getElementById("pro-tips-menu").style.display = "flex";
+});
+document.getElementById("btn-close-pro-tips").addEventListener("click", () => {
+    document.getElementById("pro-tips-menu").style.display = "none";
+    document.getElementById("pause-menu").style.display = "flex";
+});
+
 function buildHardBotCastle(cx, cz) {
     createEntity("keep", "blue", cx, cz);
     // 3-thick towering walls
@@ -904,6 +930,41 @@ function init() {
     attackGroundIndicator.add(crossHair1);
     attackGroundIndicator.add(crossHair2);
     scene.add(attackGroundIndicator);
+    
+    helpGroundIndicator = new THREE.Mesh(
+        new THREE.RingGeometry(0.8, 1.2, 16),
+        new THREE.MeshBasicMaterial({ color: 0x0088ff, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+    );
+    helpGroundIndicator.rotation.x = -Math.PI / 2;
+    helpGroundIndicator.visible = false;
+    const hPlus1 = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 1.5), new THREE.MeshBasicMaterial({ color: 0x0088ff }));
+    const hPlus2 = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.3), new THREE.MeshBasicMaterial({ color: 0x0088ff }));
+    helpGroundIndicator.add(hPlus1);
+    helpGroundIndicator.add(hPlus2);
+    scene.add(helpGroundIndicator);
+    
+    helpHoverIndicator = new THREE.Group();
+    const hCross1 = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 1.2), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
+    const hCross2 = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.15), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
+    hCross1.rotation.z = Math.PI / 4;
+    hCross2.rotation.z = Math.PI / 4;
+    helpHoverIndicator.add(hCross1);
+    helpHoverIndicator.add(hCross2);
+    helpHoverIndicator.visible = false;
+    scene.add(helpHoverIndicator);
+    fightMoveIndicator = new THREE.Mesh(
+        new THREE.RingGeometry(0.8, 1.2, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+    );
+    fightMoveIndicator.rotation.x = -Math.PI / 2;
+    fightMoveIndicator.visible = false;
+    const sword1 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 2.5), new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
+    sword1.rotation.z = Math.PI / 4;
+    const sword2 = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 2.5), new THREE.MeshBasicMaterial({ color: 0xffaa00 }));
+    sword2.rotation.z = -Math.PI / 4;
+    fightMoveIndicator.add(sword1);
+    fightMoveIndicator.add(sword2);
+    scene.add(fightMoveIndicator);
     const moveMarkersGeo = new THREE.BufferGeometry();
     const moveMarkersMat = new THREE.LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true, opacity: 0.6 });
     moveMarkersLine = new THREE.LineSegments(moveMarkersGeo, moveMarkersMat);
@@ -1542,7 +1603,7 @@ function createEntity(type, faction, x, z, isPlanned = false, homeBuilding = nul
         entity.isFertile = !!isBuildingOnResource(x, z, entity.radius || 1.5, "fertile");
     }
     entities.push(entity);
-    if (entity.baseSpeed === 0 && !entity.isPlanned) {
+    if (entity.baseSpeed === 0 || entity.type === "wall_column" || entity.type === "gatehouse" || entity.type === "wall_ramp" || entity.type === "tower" || entity.type === "tower_tile") {
         buildingGridDirty = true;
     }
     if (homeBuilding && type === "peasant") {
@@ -1622,11 +1683,25 @@ function updateWallNeighborsAround(pts) {
     const wallsToUpdate = new Set();
     const isWallType = (en) => (en.type === "wall_column" || en.type === "gatehouse" || en.type === "tower") && en.state !== "dead";
     pts.forEach(p => {
-        entities.forEach(en => {
-            if (isWallType(en) && Math.abs(en.x - p.x) <= 1.5 && Math.abs(en.z - p.z) <= 1.5) {
-                wallsToUpdate.add(en);
+        const cx = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((p.x + 150) / SPATIAL_CELL_SIZE)));
+        const cz = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((p.z + 150) / SPATIAL_CELL_SIZE)));
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                const cellX = cx + dx;
+                const cellZ = cz + dz;
+                if (cellX >= 0 && cellX < SPATIAL_WIDTH && cellZ >= 0 && cellZ < SPATIAL_HEIGHT) {
+                    const localBuildings = buildingGrid[cellZ * SPATIAL_WIDTH + cellX];
+                    if (localBuildings) {
+                        for (let i = 0; i < localBuildings.length; i++) {
+                            const en = localBuildings[i];
+                            if (isWallType(en) && Math.abs(en.x - p.x) <= 1.5 && Math.abs(en.z - p.z) <= 1.5) {
+                                wallsToUpdate.add(en);
+                            }
+                        }
+                    }
+                }
             }
-        });
+        }
     });
     wallsToUpdate.forEach(en => {
         if (en.mesh) {
@@ -3495,6 +3570,16 @@ function hasLineOfSight(p1, p2, unit) {
         }
         let floorData = getFloorHeight({ y: 10000, radius: unit ? unit.radius : 0.4 }, cx, cz);
         let sy = floorData.y;
+        
+        if (lastY < 1.5) {
+            const idxX = Math.round(cx) + 150;
+            const idxZ = Math.round(cz) + 150;
+            if (idxX >= 0 && idxX < 300 && idxZ >= 0 && idxZ < 300) {
+                const surfs = pathGrid[idxZ * 300 + idxX];
+                if (surfs && surfs.isOpenGate) sy = lastY;
+            }
+        }
+
         if (floorData.isRamp) {
             const dx = p2.x - p1.x;
             const dz = p2.z - p1.z;
@@ -3522,6 +3607,16 @@ function hasMeleeLineOfSight(p1, p2) {
         const cz = p1.z + (p2.z - p1.z) * (i / steps);
         let floorData = getFloorHeight({ y: 10000, radius: p1.radius || 0.4 }, cx, cz);
         let sy = floorData.y;
+        
+        if (lastY < 1.5) {
+            const idxX = Math.round(cx) + 150;
+            const idxZ = Math.round(cz) + 150;
+            if (idxX >= 0 && idxX < 300 && idxZ >= 0 && idxZ < 300) {
+                const surfs = pathGrid[idxZ * 300 + idxX];
+                if (surfs && surfs.isOpenGate) sy = lastY;
+            }
+        }
+
         if (Math.abs(sy - lastY) > 0.8) {
             let thw, thd;
             if (p2.dimX !== undefined) {
@@ -4251,7 +4346,7 @@ function findNextChainedWall(unit, isFetching = false, fallbackRef = null) {
         if (!e.isPlanned || e.isUnreachable || e.faction !== unit.faction) return false;
         if (e.type !== "wall_column" && e.type !== "gatehouse" && e.type !== "wall_ramp" && e.type !== "tower") return false;
         let eType = e.material || ((e.type === "wall_column" || e.type === "gatehouse" || e.type === "wall_ramp" || e.type === "tower" || e.type === "tower_tile") ? "stone" : "wood");
-        if (unit.payloadAmount > 0 && eType !== unit.payloadResource) return false;
+        if (unit.payloadResource && eType !== unit.payloadResource) return false;
         return true;
     });
     if (plannedWalls.length > 0) {
@@ -4295,21 +4390,51 @@ function findNextChainedWall(unit, isFetching = false, fallbackRef = null) {
             let refZ = unit.workerBuilding ? unit.workerBuilding.z : (fallbackRef ? fallbackRef.z : unit.z);
             let distToRef = Math.hypot(w.x - refX, w.z - refZ);
             let distToKeep = keep ? Math.hypot(w.x - keep.x, w.z - keep.z) : 0;
-            let score;
-            if (distToRef <= 5.0) {
-                score = distToKeep - (distToRef / 2.0);
-            } else {
-                let band = Math.floor(distToRef / 5.0);
-                let bandPenalty = band * 1000000;
-                let claimPenalty = isClaimed ? 500000 : 0;
-                score = distToKeep - bandPenalty - claimPenalty - index - 10000000;
-            }
+            let score = distToKeep - distToRef;
+            
+            // Prioritize gatehouses, ramps, and towers slightly by adding to their score
+            if (w.type === "gatehouse") score += 1000;
+            else if (w.type === "wall_ramp") score += 500;
+            else if (w.type === "tower" || w.type === "tower_tile") score += 250;
+            
+            // We ignore isClaimed entirely to prevent wandering. The workers will naturally clump up, 
+            // which perfectly synergizes with the new resource pooling/stealing mechanic.
             if (score > bestScore) {
                 bestScore = score;
                 bestWall = w;
             }
         });
         if (bestWall) {
+            if (!isFetching) {
+                let cost = bestWall.resourcesNeededTotal - bestWall.resourcesDelivered;
+                if (unit.payloadAmount <= cost) { // Steal if building this wall would leave them with 0 stone
+                    let needed = 20 - unit.payloadAmount; // Fill up their payload to max (20)
+                    let donors = entities.filter(e => 
+                        e !== unit && 
+                        e.faction === unit.faction && 
+                        e.state === "constructing_delivering" && 
+                        e.payloadResource === unit.payloadResource && 
+                        e.payloadAmount > 0 && 
+                        e.workerBuilding && 
+                        (e.workerBuilding.type === "wall_column" || e.workerBuilding.type === "gatehouse" || e.workerBuilding.type === "wall_ramp" || e.workerBuilding.type === "tower")
+                    ).sort((a, b) => b.payloadAmount - a.payloadAmount);
+                    for (let donor of donors) {
+                        let take = Math.min(donor.payloadAmount, needed);
+                        donor.payloadAmount -= take;
+                        unit.payloadAmount += take;
+                        needed -= take;
+                        if (donor.payloadAmount === 0) {
+                            donor.state = "constructing_fetching";
+                            if (keep) donor.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
+                            donor.path = null;
+                        }
+                        if (needed <= 0) break;
+                    }
+                }
+                if (unit.payloadAmount <= 0) {
+                    return false;
+                }
+            }
             unit.workerBuilding = bestWall;
             if (isFetching) {
                 unit.state = "constructing_fetching";
@@ -4317,6 +4442,8 @@ function findNextChainedWall(unit, isFetching = false, fallbackRef = null) {
                 unit.payloadResource = bestWall.material || ((bestWall.type === "wall_column" || bestWall.type === "gatehouse" || bestWall.type === "wall_ramp" || bestWall.type === "tower") ? "stone" : "wood");
                 if (keep) {
                     unit.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
+                } else {
+                    unit.state = "wander";
                 }
             } else {
                 unit.state = "constructing_delivering";
@@ -4543,7 +4670,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             }
             if (!unit.workerBuilding || unit.workerBuilding.state === "dead" || !unit.workerBuilding.isPlanned) {
                 let reassigned = false;
-                if (unit.payloadAmount > 0 && unit.workerBuilding && (unit.workerBuilding.type === "wall_column" || unit.workerBuilding.type === "gatehouse" || unit.workerBuilding.type === "wall_ramp" || unit.workerBuilding.type === "tower" || unit.workerBuilding.type === "tower_tile")) {
+                if (unit.workerBuilding && (unit.workerBuilding.type === "wall_column" || unit.workerBuilding.type === "gatehouse" || unit.workerBuilding.type === "wall_ramp" || unit.workerBuilding.type === "tower" || unit.workerBuilding.type === "tower_tile")) {
                     reassigned = findNextChainedWall(unit, false);
                 }
                 if (!reassigned) {
@@ -4812,7 +4939,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                                 if (unit.pathBudgetExhausted) { unit.pathCooldown = 15; return; }
                                 if (!unit.pathFails) unit.pathFails = [];
                                 unit.pathFails.push(gameFrameCount);
-                                unit.pathFails = unit.pathFails.filter(frame => gameFrameCount - frame <= 180);
+                                unit.pathFails = unit.pathFails.filter(frame => gameFrameCount - frame <= 300);
                                 if (unit.pathFails.length >= 11) {
                                     window.abortWorkerWithZzz(unit, entities);
                                 } else {
@@ -4900,7 +5027,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                     } else if (!isTowerWallJump && unit.weapon !== "Assassin" && Math.abs(localTarget.y - unit.y) > 2.5) {
                         if (!unit.pathFails) unit.pathFails = [];
                         unit.pathFails.push(gameFrameCount);
-                        unit.pathFails = unit.pathFails.filter(frame => gameFrameCount - frame <= 180);
+                        unit.pathFails = unit.pathFails.filter(frame => gameFrameCount - frame <= 300);
                         if (unit.pathFails.length >= 11 && window.abortWorkerWithZzz) {
                             window.abortWorkerWithZzz(unit, entities);
                         } else {
@@ -4919,7 +5046,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         if (!isTowerWallJump && unit.targetPosition && unit.targetPosition.y !== undefined && Math.abs(unit.targetPosition.y - unit.y) > 2.5 + finalDist * 1.5) {
                             if (!unit.pathFails) unit.pathFails = [];
                             unit.pathFails.push(gameFrameCount);
-                            unit.pathFails = unit.pathFails.filter(frame => gameFrameCount - frame <= 180);
+                            unit.pathFails = unit.pathFails.filter(frame => gameFrameCount - frame <= 300);
                             if (unit.pathFails.length >= 11 && window.abortWorkerWithZzz) {
                                 window.abortWorkerWithZzz(unit, entities);
                             } else {
@@ -5187,14 +5314,16 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             // Crossbow/Ballista intentionally do not reset reloadTimer, allowing incremental reload
         } else {
             // Wind-up weapons only start accumulating stationary time AFTER cooldown finishes (sequential)
-            if (unit.cooldownTimer <= 0) {
-                if (unit.weapon === "Short Bow" || unit.weapon === "Longbow" || unit.weapon === "Catapult" || unit.weapon === "Trebuchet" || unit.weapon === "Mangonel" || unit.weapon === "Slinger") {
+            if (unit.weapon === "Catapult" || unit.weapon === "Trebuchet" || unit.weapon === "Mangonel") {
+                unit.timeStationary += deltaTime; // Siege weapons wind up concurrently with cooldown
+            } else if (unit.cooldownTimer <= 0) {
+                if (unit.weapon === "Short Bow" || unit.weapon === "Longbow" || unit.weapon === "Slinger") {
                     unit.timeStationary += deltaTime;
                 }
             }
             // Reload weapons can reload while on cooldown, but ONLY while stationary
             if (unit.weapon === "Crossbow" || unit.weapon === "Ballista") {
-                const maxRel = unit.weapon === "Ballista" ? 10.0 : 5.0;
+                const maxRel = unit.weapon === "Ballista" ? 7.5 : 5.0;
                 unit.reloadTimer = Math.min((unit.reloadTimer || 0) + deltaTime, maxRel);
             }
         }
@@ -5208,13 +5337,8 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 if (unit.cooldownTimer > wStats.cd - fireAnimTime) {
                     armGroup.rotation.x = Math.PI / 6; 
                 } else if (hasTarget) {
-                    if (unit.cooldownTimer > 0) {
-                        const progress = 1.0 - (unit.cooldownTimer / (wStats.cd - fireAnimTime));
-                        armGroup.rotation.x = (Math.PI / 6) - (Math.PI * 0.66 * progress);
-                    } else {
-                        const progress = Math.min(1.0, unit.timeStationary / wStats.prepTime);
-                        armGroup.rotation.x = (Math.PI / 6) - (Math.PI * 0.66 * progress);
-                    }
+                    const progress = Math.min(1.0, unit.timeStationary / wStats.prepTime);
+                    armGroup.rotation.x = (Math.PI / 6) - (Math.PI * 0.66 * progress);
                 } else {
                     armGroup.rotation.x = Math.PI / 6; // Completely uncharged
                 }
@@ -5436,13 +5560,21 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         let baseB = getUnitMass(uB, false);
                         let weightA = baseA;
                         let weightB = baseB;
-                        // Tie-Breaker Only 10x Seniority
-                        // If they have the exact same base mass, the older unit (uA) gets a massive 10x anchor bonus
-                        // Do not apply this vs enemies, so they push each other equally
-                        if (baseA === baseB && uA.state !== "idle" && uA.state !== "wander" && uA.faction === uB.faction) {
-                            weightA *= 10.0;
+                        // Hybrid Tie-Breaker: Mass-Dominance & Seniority
+                        if (uA.state !== "idle" && uA.state !== "wander" && uA.faction === uB.faction) {
+                            const massDiff = Math.abs(baseA - baseB);
+                            if (massDiff < 500) {
+                                if (baseA > baseB) {
+                                    weightA *= 10.0;
+                                } else if (baseB > baseA) {
+                                    weightB *= 10.0;
+                                } else {
+                                    weightA *= 10.0; // Exact tie: Fallback to seniority (older unit A wins)
+                                }
+                            } else {
+                                weightA += 0.000001;
+                            }
                         } else {
-                            // If they aren't identical, just use a tiny micro-bonus so we don't divide by zero or perfectly tie
                             weightA += 0.000001;
                         }
                         const totalWeight = weightA + weightB;
@@ -5581,20 +5713,33 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
         let netPushX = 0, netPushZ = 0;
         let pushCount = 0;
         let inOpenGate = false;
-        if (unit.radius > 0.4) {
-            for (let i = 0; i < buildings.length; i++) {
-                const e = buildings[i];
-                if (((e.type === "gatehouse" && e.isOpen !== false) || e.type === "tower" || e.type === "tower_tile") && Math.hypot(unit.x - e.x, unit.z - e.z) < (unit.radius + 0.2) && unit.y <= e.y + (e.height || 2.0) - 0.8) {
-                    inOpenGate = true;
-                    break;
+        const uCellX = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((unit.x + 150) / SPATIAL_CELL_SIZE)));
+        const uCellZ = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((unit.z + 150) / SPATIAL_CELL_SIZE)));
+        const localBuildings = new Set();
+        for(let dx=-1; dx<=1; dx++) {
+            for(let dz=-1; dz<=1; dz++) {
+                const cx = uCellX + dx;
+                const cz = uCellZ + dz;
+                if(cx >= 0 && cx < SPATIAL_WIDTH && cz >= 0 && cz < SPATIAL_HEIGHT) {
+                    const cB = buildingGrid[cz * SPATIAL_WIDTH + cx];
+                    if(cB) for(let i=0; i<cB.length; i++) localBuildings.add(cB[i]);
                 }
             }
         }
-        buildings.forEach(b => {
+
+        if (unit.radius > 0.4) {
+            localBuildings.forEach(e => {
+                if (((e.type === "gatehouse" && e.isOpen !== false) || e.type === "tower" || e.type === "tower_tile") && Math.hypot(unit.x - e.x, unit.z - e.z) < (unit.radius + 0.2) && unit.y <= e.y + (e.height || 2.0) - 0.8) {
+                    inOpenGate = true;
+                }
+            });
+        }
+        localBuildings.forEach(b => {
             const bHwX = (b.dimX !== undefined ? b.dimX : ((b.radius || 0.5) * 2)) / 2;
             const bHwZ = (b.dimZ !== undefined ? b.dimZ : ((b.radius || 0.5) * 2)) / 2;
-            const cullDistX = bHwX + unit.radius + 0.5;
-            const cullDistZ = bHwZ + unit.radius + 0.5;
+            const extraCull = (unit.type === "king") ? 2.5 : 0.5;
+            const cullDistX = bHwX + unit.radius + extraCull;
+            const cullDistZ = bHwZ + unit.radius + extraCull;
             const dx = unit.x - b.x;
             if (dx > cullDistX || dx < -cullDistX) return; // Quick cull X
             const dz = unit.z - b.z;
@@ -5853,7 +5998,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 // Trapped unit failsafe: if deep inside the building, handle escape
                 const isWorking = WORKER_STATES.has(unit.state);
                 if ((overlapDist > (unit.radius || 0.2) + Math.min(0.8, (b.radius || 1.0) * 0.5) || pushCount >= 2) && !isWorking) {
-                    if (b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "keep" || b.type === "tower_tile") {
+                    if ((b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "keep" || b.type === "tower_tile") && Math.abs(roof - unit.y) <= 1.5) {
                         unit.y = roof;
                     } else {
                         // Find nearest pathable tile
@@ -5870,11 +6015,16 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                                         const pz = gz - 150 + 0.5;
                                         // Ensure this tile is ACTUALLY safe from buildings (prevents teleporting back into off-grid gaps)
                                         let isSafe = true;
-                                        for (let i = 0; i < buildings.length; i++) {
-                                            const bb = buildings[i];
-                                            if (Math.hypot(px - bb.x, pz - bb.z) < (bb.radius || 1.0) + (unit.radius || 0.2)) {
-                                                isSafe = false;
-                                                break;
+                                        const cBx = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((px + 150) / SPATIAL_CELL_SIZE)));
+                                        const cBz = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((pz + 150) / SPATIAL_CELL_SIZE)));
+                                        const safeBuildings = buildingGrid[cBz * SPATIAL_WIDTH + cBx];
+                                        if (safeBuildings) {
+                                            for (let i = 0; i < safeBuildings.length; i++) {
+                                                const bb = safeBuildings[i];
+                                                if (Math.hypot(px - bb.x, pz - bb.z) < (bb.radius || 1.0) + (unit.radius || 0.2)) {
+                                                    isSafe = false;
+                                                    break;
+                                                }
                                             }
                                         }
                                         if (isSafe) {
@@ -5987,10 +6137,10 @@ function handleCombat(deltaTime, combatants) {
         // All units (including peasants) can now natively defend themselves thanks to spatial hashing!
         if (unit.type === "siege_shield") return;
         // Restore worker combat filter: only idle, wandering, or manually commanded peasants will fight
-        if (unit.type === "peasant" && !["idle", "wander", "fightmove", "attacking", "going_home", "moving"].includes(unit.state)) {
+        if (unit.type === "peasant" && !["idle", "wander", "fightmove", "attacking", "going_home", "moving", "help"].includes(unit.state)) {
             return;
         }
-        const isFightMoving = (unit.state === "fightmove") || (unit.state === "attacking" && unit.savedFightMoveDest) || (unit.isAggro && (unit.state === "idle" || unit.state === "wander"));
+        const isFightMoving = (unit.state === "fightmove") || (unit.state === "attacking" && unit.savedFightMoveDest) || (unit.isAggro && (unit.state === "idle" || unit.state === "wander" || unit.state === "help"));
         const isManuallyMoving = (unit.state === "moving" || unit.state === "training");
         const isMountedShortBow = (unit.weapon === "Short Bow" && unit.hasHorse);
         const wStats = unit.weapon ? (WEAPONS[unit.weapon] || { range: 1.0, dmg: 10, cd: 1.0, type: "melee" }) : { range: (unit.type === "king" ? 1.3 : 0.9), dmg: (unit.type === "king" ? 25 : 5), cd: 1.0, type: "melee" };
@@ -6007,7 +6157,8 @@ function handleCombat(deltaTime, combatants) {
                 unit.pathCooldown = 0;
             } else if (unit.state === "attacking") {
                 if (!processNextCommand(unit)) {
-                    unit.state = "idle";
+                    unit.state = unit.savedHelpTarget ? "help" : "idle";
+                    if (unit.state === "help") unit.helpTarget = unit.savedHelpTarget;
                     unit.isExplicitAttack = false;
                     unit.targetPosition = null;
                     unit.path = null;
@@ -6102,13 +6253,14 @@ function handleCombat(deltaTime, combatants) {
                     unit.savedFightMoveDest = null;
                     unit.path = null;
                     unit.pathCooldown = 0;
-                } else if (unit.state === "moving" || unit.state === "wander" || unit.state === "idle") {
+                } else if (unit.state === "moving" || unit.state === "wander" || unit.state === "idle" || unit.state === "help") {
                     target = null;
                     unit.targetEntity = null;
                 } else if (unit.state === "attacking" && !unit.isExplicitAttack) {
                     target = null;
                     unit.targetEntity = null;
-                    unit.state = "idle";
+                    unit.state = unit.savedHelpTarget ? "help" : "idle";
+                    if (unit.state === "help") unit.helpTarget = unit.savedHelpTarget;
                 }
             } else if (!isRanged && unit.state === "idle" && distToTarget > wStats.range + unit.radius + target.radius + 2.0 && (unit.id % 15 === gameFrameCount % 15)) {
                 // Melee units watching distant enemies periodically drop target to allow re-evaluating closer threats
@@ -6186,7 +6338,7 @@ function handleCombat(deltaTime, combatants) {
                     if (wStats.type === "crossbow") {
                         unit.reloadTimer = 0;
                     }
-                    if (wStats.type === "bow") {
+                    if (wStats.type === "bow" || wStats.type === "catapult") {
                         unit.timeStationary = 0;
                     }
                 } else {
@@ -6792,7 +6944,7 @@ function processConstructionQueue(activePeasants, keeps, filterFn = null) {
     factions.forEach(faction => {
         let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home"));
         if (idlePeasants.length === 0) return;
-        const planned = entities.filter(e => e.faction === faction && e.isPlanned && e.state !== "dead" && !e.isUnreachable && e.type !== "tower_tile" && (!filterFn || filterFn(e)));
+        const planned = entities.filter(e => e.faction === faction && e.isPlanned && e.state !== "dead" && !e.isUnreachable && !e.isZzz && e.type !== "tower_tile" && (!filterFn || filterFn(e)));
         if (planned.length === 0) return;
         let needsWork = [];
         let currentlyCarriedMap = buildCarriedMap(faction);
@@ -8381,6 +8533,8 @@ function applyCommandToUnit(unit, cmd) {
     }
     unit.timeNearTarget = 0;
     unit.savedFightMoveDest = null;
+    unit.helpTarget = cmd.helpTarget || null;
+    unit.savedHelpTarget = cmd.helpTarget || null;
     unit.path = null;
     unit.pathCooldown = 0;
     unit.workerBuilding = cmd.workerBuilding;
@@ -8983,6 +9137,15 @@ function onMouseDown(e) {
             document.body.style.cursor = "default";
             if (attackGroundIndicator) attackGroundIndicator.visible = false;
         }
+        if (helpMode) {
+            helpMode = false;
+            document.body.style.cursor = "default";
+        }
+        if (isFightMoveQueued) {
+            isFightMoveQueued = false;
+            document.body.style.cursor = "default";
+            if (fightMoveIndicator) fightMoveIndicator.visible = false;
+        }
         if (isRightDrag) {
             isRightDrag = false;
             rightDragFightMove = false;
@@ -9104,6 +9267,29 @@ function onMouseDown(e) {
                 if (parentTower) hitEnt = parentTower;
             }
 
+            if (helpMode) {
+                if (hitEnt && hitEnt.state !== "dead") {
+                    const mobileUnits = selectedEntities.filter(unit => unit.faction === "red" && unit.baseSpeed > 0);
+                    mobileUnits.forEach(unit => {
+                        if (unit === hitEnt) return;
+                        let cmd = {
+                            state: "help",
+                            helpTarget: hitEnt,
+                            targetPosition: null,
+                            targetEntity: null,
+                            fightMoveDestination: null
+                        };
+                        enqueueOrExecute(unit, e, cmd);
+                    });
+                    showStatusLog("Helping " + hitEnt.type);
+                } else {
+                    showStatusLog("Invalid help target.");
+                }
+                helpMode = false;
+                document.body.style.cursor = "default";
+                return;
+            }
+
             if (hitEnt && hitEnt.faction !== "red" && !isFightMoveQueued) {
                 if (hitEnt.type !== "tree" || selectedEntities.some(e => e.type === "king")) {
                     clickedEnemy = hitEnt;
@@ -9114,8 +9300,6 @@ function onMouseDown(e) {
                 if (hitEnt.isPlanned) {
                     pt.y = getTerrainHeight(pt.x, pt.z);
                 } else {
-                    let targetX = hitEnt.x;
-                    let targetZ = hitEnt.z;
                     if (hitEnt.type === "tower" && hitEnt.childTiles) {
                         let closestTile = null;
                         let minDist = Infinity;
@@ -9127,18 +9311,22 @@ function onMouseDown(e) {
                             }
                         });
                         if (closestTile) {
-                            targetX = closestTile.x;
-                            targetZ = closestTile.z;
+                            pt.x = closestTile.x;
+                            pt.z = closestTile.z;
+                        } else {
+                            pt.x = intersects[0].point.x;
+                            pt.z = intersects[0].point.z;
                         }
-                    }
-                    pt.x = intersects[0].point.x;
-                    pt.z = intersects[0].point.z;
-                    let dx = targetX - pt.x;
-                    let dz = targetZ - pt.z;
-                    let dist = Math.hypot(dx, dz);
-                    if (dist > 0.05) {
-                        pt.x += (dx / dist) * 0.1;
-                        pt.z += (dz / dist) * 0.1;
+                    } else {
+                        pt.x = intersects[0].point.x;
+                        pt.z = intersects[0].point.z;
+                        let dx = hitEnt.x - pt.x;
+                        let dz = hitEnt.z - pt.z;
+                        let dist = Math.hypot(dx, dz);
+                        if (dist > 0.05) {
+                            pt.x += (dx / dist) * 0.1;
+                            pt.z += (dz / dist) * 0.1;
+                        }
                     }
                     pt.y = hitEnt.y + (hitEnt.height || 6.0);
                 }
@@ -9216,9 +9404,35 @@ function onMouseMove(e) {
     } else if (attackGroundIndicator) {
         attackGroundIndicator.visible = false;
     }
+    
+    if (helpMode && helpGroundIndicator) {
+        const pt = getTerrainIntersection(e.clientX, e.clientY);
+        if (pt) {
+            helpGroundIndicator.position.set(pt.x, pt.y + 0.1, pt.z);
+            helpGroundIndicator.visible = true;
+        } else {
+            helpGroundIndicator.visible = false;
+        }
+    } else if (helpGroundIndicator) {
+        helpGroundIndicator.visible = false;
+    }
+    
+    if (isFightMoveQueued && fightMoveIndicator) {
+        const pt = getTerrainIntersection(e.clientX, e.clientY);
+        if (pt) {
+            fightMoveIndicator.position.set(pt.x, pt.y + 0.1, pt.z);
+            fightMoveIndicator.visible = true;
+        } else {
+            fightMoveIndicator.visible = false;
+        }
+    } else if (fightMoveIndicator) {
+        fightMoveIndicator.visible = false;
+    }
+    
     if (!isDragging && !placementMode && !wallDrawMode) {
         let hoveringEnemy = false;
         let hoveringBlueprint = false;
+        let hoveringHelp = false;
         if (selectedEntities.some(ent => ent.faction === "red" && ent.baseSpeed > 0)) {
             const raycaster = new THREE.Raycaster();
             const mouse = new THREE.Vector2(
@@ -9233,7 +9447,8 @@ function onMouseMove(e) {
                 ent.state !== "dead" && ent.mesh &&
                 (
                     (ent.faction !== "red" && ent.faction !== "neutral" && (ent.type !== "tree" || hasKing) && ent.type !== "stone" && ent.type !== "gold" && ent.type !== "iron") ||
-                    (ent.faction === "red" && ent.isPlanned && hasPeasant)
+                    (ent.faction === "red" && ent.isPlanned && hasPeasant) ||
+                    (helpMode && ent.faction === "red")
                 )
             ).map(ent => ent.mesh);
             const intersects = raycaster.intersectObjects(checkMeshes, true).filter(h => !h.object.isCosmetic);
@@ -9244,7 +9459,16 @@ function onMouseMove(e) {
                 }
                 const hoveredEnt = entities.find(ent => ent.mesh === root);
                 if (hoveredEnt) {
-                    if (hoveredEnt.faction === "red" && hoveredEnt.isPlanned && hasPeasant) {
+                    if (helpMode && hoveredEnt.faction === "red") {
+                        if (helpHoverIndicator) {
+                            helpHoverIndicator.position.copy(hoveredEnt.mesh.position);
+                            helpHoverIndicator.position.y += (hoveredEnt.height || 1.0) + 1.0;
+                            helpHoverIndicator.quaternion.copy(camera.quaternion);
+                            helpHoverIndicator.visible = true;
+                        }
+                        if (helpGroundIndicator) helpGroundIndicator.visible = false;
+                        hoveringHelp = true;
+                    } else if (hoveredEnt.faction === "red" && hoveredEnt.isPlanned && hasPeasant) {
                         hoveringBlueprint = true;
                     } else if (hoveredEnt.faction !== "red" && (hoveredEnt.type !== "tree" || hasKing)) {
                         enemyTargetIndicator.position.copy(hoveredEnt.mesh.position);
@@ -9256,7 +9480,33 @@ function onMouseMove(e) {
                 }
             }
             // Wall hover logic
-            const wallMeshes = entities.filter(ent => !ent.isDead && !ent.isPlanned && ent.mesh && (ent.type === "wall_column" || ent.type === "wall_ramp" || ent.type === "gatehouse" || ent.type === "keep" || ent.type === "tower")).map(ent => ent.mesh);
+            let wallMeshes = [];
+            let tHit = raycaster.intersectObject(terrainMesh);
+            if (tHit.length > 0) {
+                const tx = tHit[0].point.x;
+                const tz = tHit[0].point.z;
+                const cx = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((tx + 150) / SPATIAL_CELL_SIZE)));
+                const cz = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((tz + 150) / SPATIAL_CELL_SIZE)));
+                for (let dx = -3; dx <= 3; dx++) {
+                    for (let dz = -3; dz <= 3; dz++) {
+                        const cellX = cx + dx;
+                        const cellZ = cz + dz;
+                        if (cellX >= 0 && cellX < SPATIAL_WIDTH && cellZ >= 0 && cellZ < SPATIAL_HEIGHT) {
+                            const localBuildings = buildingGrid[cellZ * SPATIAL_WIDTH + cellX];
+                            if (localBuildings) {
+                                for (let i = 0; i < localBuildings.length; i++) {
+                                    const ent = localBuildings[i];
+                                    if (!ent.isDead && !ent.isPlanned && ent.mesh && (ent.type === "wall_column" || ent.type === "wall_ramp" || ent.type === "gatehouse" || ent.type === "keep" || ent.type === "tower")) {
+                                        if (!wallMeshes.includes(ent.mesh)) {
+                                            wallMeshes.push(ent.mesh);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             const wallHits = raycaster.intersectObjects(wallMeshes, true).filter(h => !h.object.isCosmetic);
             if (wallHits.length > 0 && !hoveringEnemy && !hoveringBlueprint) {
                 wallTargetIndicator.position.copy(wallHits[0].point);
@@ -9267,8 +9517,15 @@ function onMouseMove(e) {
         if (!hoveringEnemy && enemyTargetIndicator) {
             enemyTargetIndicator.visible = false;
         }
+        if (!hoveringHelp && helpHoverIndicator) {
+            helpHoverIndicator.visible = false;
+        }
         if (hoveringBlueprint) {
             document.body.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'24\' font-size=\'24\'>🔨</text></svg>") 16 16, pointer';
+        } else if (hoveringHelp) {
+            document.body.style.cursor = 'pointer';
+        } else if (helpMode) {
+            document.body.style.cursor = 'crosshair';
         } else if (!attackGroundMode) {
             document.body.style.cursor = "default";
         }
@@ -9469,7 +9726,11 @@ function onMouseUp(e) {
         }
         rightDragFightMove = false;
         rightDragPath = [];
-        isFightMoveQueued = false;
+        if (isFightMoveQueued) {
+            isFightMoveQueued = false;
+            document.body.style.cursor = "default";
+            if (fightMoveIndicator) fightMoveIndicator.visible = false;
+        }
         return;
     }
     if (!isDragging) return;
@@ -9647,7 +9908,23 @@ function onKeyDown(e) {
     if (e.code === "KeyG" && !keysPressed["KeyG"] && document.getElementById("btn-attack-ground").style.display !== "none") {
         attackGroundMode = !attackGroundMode;
         document.body.style.cursor = attackGroundMode ? "crosshair" : "default";
+        if (attackGroundMode) {
+            helpMode = false;
+            if (helpGroundIndicator) helpGroundIndicator.visible = false;
+            isFightMoveQueued = false;
+            if (fightMoveIndicator) fightMoveIndicator.visible = false;
+        }
         if (!attackGroundMode && attackGroundIndicator) attackGroundIndicator.visible = false;
+    }
+    if (e.code === "KeyH" && !keysPressed["KeyH"]) {
+        helpMode = !helpMode;
+        document.body.style.cursor = helpMode ? "crosshair" : "default";
+        if (helpMode) {
+            attackGroundMode = false;
+            if (attackGroundIndicator) attackGroundIndicator.visible = false;
+            isFightMoveQueued = false;
+            if (fightMoveIndicator) fightMoveIndicator.visible = false;
+        }
     }
     if (e.code === "Backquote" && !keysPressed["Backquote"]) {
         const playerKing = entities.find(ent => ent.type === "king" && ent.faction === "red" && ent.state !== "dead");
@@ -9702,6 +9979,20 @@ function onKeyDown(e) {
         }
         cancelPlacement();
         isFightMoveQueued = false;
+        if (attackGroundMode) {
+            attackGroundMode = false;
+            document.body.style.cursor = "default";
+            if (attackGroundIndicator) attackGroundIndicator.visible = false;
+        }
+        if (helpMode) {
+            helpMode = false;
+            document.body.style.cursor = "default";
+        }
+        if (isFightMoveQueued) {
+            isFightMoveQueued = false;
+            document.body.style.cursor = "default";
+            if (fightMoveIndicator) fightMoveIndicator.visible = false;
+        }
         if (wallDrawMode) {
             wallDrawMode = null;
             clearWallGhosts();
@@ -9719,6 +10010,15 @@ function onKeyDown(e) {
     if (e.code === "KeyF") {
         if (selectedEntities.some(u => u.baseSpeed > 0 && u.faction === "red")) {
             isFightMoveQueued = true;
+            if (attackGroundMode) {
+                attackGroundMode = false;
+                if (attackGroundIndicator) attackGroundIndicator.visible = false;
+            }
+            if (helpMode) {
+                helpMode = false;
+                if (helpGroundIndicator) helpGroundIndicator.visible = false;
+            }
+            document.body.style.cursor = "crosshair";
             showStatusLog("Fight-Move mode active. Click ground to attack-move.");
         }
     }
@@ -10467,12 +10767,38 @@ const WEAPON_SVGS = {
     "RoyalKnight": `<span class="btn-icon" style="font-size: 16px;">👑</span>`,
     "Peasant": `<svg class="weapon-icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="#f5d0b5" stroke="#8d6e63" stroke-width="1"/><path d="M8,22 L8,14 Q12,12 16,14 L16,22" fill="#a1887f" stroke="#5d4037" stroke-width="1"/></svg>`,
     "King": `<svg class="weapon-icon" viewBox="0 0 24 24"><path d="M4,20 L4,10 L8,14 L12,8 L16,14 L20,10 L20,20 Z" fill="#ffd700" stroke="#b8860b" stroke-width="1"/></svg>`,
-    "Shield": `<span class="btn-icon" style="font-size: 16px;">🟨</span>`,
+    "Shield": `<span class="btn-icon" style="font-size: 16px;">&#x1F7E8;</span>`,
     "Ballista": `<span class="btn-icon" style="font-size: 16px;">🏹</span>`,
-    "Catapult": `<span class="btn-icon" style="font-size: 16px;">☄️</span>`,
-    "Trebuchet": `<span class="btn-icon" style="font-size: 16px;">🌠</span>`,
+    "Catapult": `<span class="btn-icon" style="font-size: 16px;">&#x26F0;&#xFE0F;</span>`,
+    "Trebuchet": `<span class="btn-icon" style="font-size: 16px;">&#x1F3D7;&#xFE0F;</span>`,
+    "Mangonel": `<span class="btn-icon" style="font-size: 16px;">&#x1FAA8;</span>`,
     "horse": `<span class="btn-icon" style="font-size: 16px;">🐎</span>`,
-    "wagon": `<span class="btn-icon" style="font-size: 16px;">🛒</span>`
+    "wagon": `<span class="btn-icon" style="font-size: 16px;">🛒</span>`,
+    "house": `<span class="btn-icon" style="font-size: 16px;">&#x1F3E0;</span>`,
+    "farm": `<span class="btn-icon" style="font-size: 16px;">&#x1F33E;</span>`,
+    "woodcutter": `<span class="btn-icon" style="font-size: 16px;">&#x1FAB5;</span>`,
+    "mine": `<span class="btn-icon" style="font-size: 16px;">&#x26CF;&#xFE0F;</span>`,
+    "loadhouse": `<span class="btn-icon" style="font-size: 16px;">&#x1F4E6;</span>`,
+    "stables": `<span class="btn-icon" style="font-size: 16px;">&#x1F434;</span>`,
+    "market": `<span class="btn-icon" style="font-size: 16px;">&#x2696;&#xFE0F;</span>`,
+    "barracks": `<span class="btn-icon" style="font-size: 16px;">&#x1F6E1;&#xFE0F;</span>`,
+    "mercenary_post": `<span class="btn-icon" style="font-size: 16px;">&#x1F4B0;</span>`,
+    "siegeshop": `<span class="btn-icon" style="font-size: 16px;">&#x1F527;</span>`,
+    "poleturner": `<span class="btn-icon" style="font-size: 16px;">&#x1F38B;</span>`,
+    "gruntshop": `<span class="btn-icon" style="font-size: 16px;">&#x1FA93;</span>`,
+    "blacksmith": `<span class="btn-icon" style="font-size: 16px;">&#x2692;&#xFE0F;</span>`,
+    "knightarms": `<span class="btn-icon" style="font-size: 16px;">&#x269C;&#xFE0F;</span>`,
+    "fletcher": `<span class="btn-icon" style="font-size: 16px;">&#x1F3F9;</span>`,
+    "tailor": `<span class="btn-icon" style="font-size: 16px;">&#x1F9F5;</span>`,
+    "armorer": `<span class="btn-icon" style="font-size: 16px;">&#x1F94B;</span>`,
+    "bakery": `<span class="btn-icon" style="font-size: 16px;">&#x1F956;</span>`,
+    "brewery": `<span class="btn-icon" style="font-size: 16px;">&#x1F37B;</span>`,
+    "carpenter": `<span class="btn-icon" style="font-size: 16px;">&#x1FA91;</span>`,
+    "jeweler": `<span class="btn-icon" style="font-size: 16px;">&#x1F48E;</span>`,
+    "gatehouse": `<span class="btn-icon" style="font-size: 16px;">&#x1F6AA;</span>`,
+    "tower": `<span class="btn-icon" style="font-size: 16px;">&#x1F5FC;</span>`,
+    "wall_column": `<span class="btn-icon" style="font-size: 16px;">&#x1F9F1;</span>`,
+    "wall_ramp": `<span class="btn-icon" style="font-size: 16px;">&#x1FA9C;</span>`
 };
 function getWeaponSVG(w) {
     return WEAPON_SVGS[w] || `<svg class="weapon-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#cfd8dc" stroke="#90a4ae" stroke-width="1"/></svg>`;
@@ -11693,6 +12019,28 @@ function gameLoop(timestamp) {
             if (e.type === "peasant" && e.state === "wander") {
                 handlePeasantWander(e, deltaTime);
             }
+            if (e.state === "help" && e.helpTarget) {
+                if (e.helpTarget.state === "dead") {
+                    e.state = "idle";
+                    e.helpTarget = null;
+                    e.savedHelpTarget = null;
+                    e.path = null;
+                } else {
+                    const dist = Math.hypot(e.x - e.helpTarget.x, e.z - e.helpTarget.z);
+                    if (dist > 3.0) {
+                        if (!e.path || e.pathCooldown <= 0) {
+                            const angle = (e.id * 1.37) % (Math.PI * 2);
+                            const offsetR = 1.0 + (e.id % 2);
+                            const tx = e.helpTarget.x + Math.cos(angle) * offsetR;
+                            const tz = e.helpTarget.z + Math.sin(angle) * offsetR;
+                            e.targetPosition = new THREE.Vector3(tx, getTerrainHeight(tx, tz), tz);
+                            e.pathCooldown = 1.0;
+                        }
+                    } else {
+                        e.path = null;
+                    }
+                }
+            }
         });
         if (gameDifficulty === "test") {
             runAI(deltaTime);
@@ -12079,7 +12427,7 @@ function gameLoop(timestamp) {
     const hbSettingEl = document.getElementById('healthbar-setting');
     const hbSetting = hbSettingEl ? hbSettingEl.value : 'default';
     entities.forEach(ent => {
-        if (ent.type === "tower_tile" || ent.type === "tree" || ent.type === "iron" || ent.type === "stone" || ent.type === "gold") return;
+        if (ent.type === "tower_tile" || ent.type === "tree" || ent.type === "iron" || ent.type === "stone" || ent.type === "gold" || ent.type === "wall_column" || ent.type === "wall_ramp" || ent.type === "gatehouse" || ent.type === "tower") return;
         if (!ent.mesh || ent.state === "dead") {
             if (ent.healthBar) {
                 scene.remove(ent.healthBar);
@@ -12140,11 +12488,11 @@ function gameLoop(timestamp) {
                 else if (ent.faction === "blue") teamColor = "#1976d2";
                 
                 ctx.strokeStyle = teamColor;
-                ctx.lineWidth = isSelected ? 8 : 4;
+                ctx.lineWidth = isSelected ? 10 : 5;
                 ctx.strokeRect(0, 0, w, h);
                 
-                const innerX = isSelected ? 4 : 2;
-                const innerY = isSelected ? 4 : 2;
+                const innerX = isSelected ? 5 : 2.5;
+                const innerY = isSelected ? 5 : 2.5;
                 const innerW = w - innerX * 2;
                 const innerH = h - innerY * 2;
                 
@@ -12157,7 +12505,7 @@ function gameLoop(timestamp) {
                 const currentSlivers = Math.max(0, currentHp) / hpPerSliver;
                 
                 for (let i = 0; i < Math.ceil(currentSlivers); i++) {
-                    let color = "#4caf50"; // Green
+                    let color = "#39ff14"; // Neon Green
                     if (i === 0) color = "#f44336"; // Red
                     else if (i === 1) color = "#ff9800"; // Orange
                     else if (i === 2) color = "#ffeb3b"; // Yellow
@@ -12353,7 +12701,7 @@ function triggerDeath(victim, killer) {
     }
     selectedEntities = selectedEntities.filter(e => e !== victim);
     spawnDeathSplatter(victim.x, victim.y, victim.z, victim.radius);
-    needsPathGridUpdate = true;
+    if (victim.type !== 'peasant' && victim.type !== 'soldier' && victim.type !== 'king' && !victim.type.startsWith('siege_')) needsPathGridUpdate = true;
     scene.remove(victim.mesh);
     if (victim.healthBar) scene.remove(victim.healthBar);
     disposeHierarchy(victim.mesh);

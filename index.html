@@ -76,6 +76,8 @@
             <div style="display: flex; gap: 10px; justify-content: center;">
                 <button id="btn-how-to-play" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #8b5a2b; color: white;">How to Play</button>
                 <button id="btn-buildings-list" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #5a8b2b; color: white;">Buildings Info</button>
+                <button id="btn-pro-tips" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #673ab7; color: white;">Pro Tips</button>
+
                 <button id="btn-restart-menu" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #d32f2f; color: white;">Restart</button>
                 <button id="btn-resume" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #4caf50; color: white;">Resume Game</button>
             </div>
@@ -116,6 +118,26 @@
             </div>
         </div>
     </div>
+    
+    <!-- Pro Tips Overlay -->
+    <div id="pro-tips-menu" class="parchment-theme" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 903; display: none; flex-direction: column; justify-content: center; align-items: center; background-color: rgba(0,0,0,0.8);">
+        <div style="background-color: #f4e8d2; padding: 30px; border: 4px solid #8b5a2b; border-radius: 8px; max-width: 700px; max-height: 90vh; overflow-y: auto; text-align: left; box-shadow: 0 0 20px rgba(0,0,0,0.5); font-family: 'Outfit', sans-serif;">
+            <h2 style="color: #4a3c31; font-family: 'Cinzel', serif; font-size: 2em; margin-bottom: 20px; text-align: center;">Pro Tips</h2>
+            <ul style="color: #4e342e; line-height: 1.6; font-size: 1.1em; margin-bottom: 30px;">
+                <li style="margin-bottom: 10px;">if ur reading this ur gae noob ehaehahe</li>
+                <li style="margin-bottom: 10px;">The King can build by proximity and chop trees in emergencies.</li>
+                <li style="margin-bottom: 10px;">The Market is so important you get your first one free.</li>
+                <li style="margin-bottom: 10px;">Don't be ashamed to sell weapons you're not using.</li>
+                <li style="margin-bottom: 10px;">Waiting for wood is for suckas.</li>
+                <li style="margin-bottom: 10px;">Buy what you need to keep your peasants busy.</li>
+                <li style="margin-bottom: 10px;">5 seconds of waiting is 5 seconds of lost productivity.</li>
+            </ul>
+            <div style="text-align: center;">
+                <button id="btn-close-pro-tips" class="action-btn" style="padding: 10px 30px; font-size: 1.2em; cursor: pointer; background: #8b5a2b; color: white;">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Main Game Canvas Container -->
     <div id="buildings-list-menu" class="parchment-theme" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 902; display: none; flex-direction: column; justify-content: center; align-items: center; background-color: rgba(0,0,0,0.8);">
         <div style="background-color: #f4e8d2; padding: 30px; border: 4px solid #8b5a2b; border-radius: 8px; max-width: 800px; max-height: 90vh; overflow-y: auto; text-align: left; box-shadow: 0 0 20px rgba(0,0,0,0.5); font-family: 'Outfit', sans-serif;">
@@ -711,7 +733,7 @@
                     <div class="train-price">150</div>
                     <div class="train-label">Shield</div>
                     <div class="train-icons">
-                        <span class="btn-icon" style="font-size: 16px;">&#x1F6E1;&#xFE0F;</span>
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F7E8;</span>
                     </div>
                     <div class="train-numbers"><span id="queue-Shield" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
                 </button>
@@ -743,7 +765,7 @@
                     <div class="train-price">450</div>
                     <div class="train-label" style="font-size: 8px;">Trebuchet</div>
                     <div class="train-icons">
-                        <span class="btn-icon" style="font-size: 16px;">&#x1F3F0;</span>
+                        <span class="btn-icon" style="font-size: 16px;">&#x1F3D7;&#xFE0F;</span>
                     </div>
                     <div class="train-numbers"><span id="queue-Trebuchet" class="queue-num" title="In Queue" style="color: #ffd700;">+0</span></div>
                 </button>
