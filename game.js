@@ -19,7 +19,7 @@ const WEAPONS = {
     "Sword":    { dmg: 10, cd: 0.4,  range: 1.25, speedMod: 0.0, type: "melee",  desc: "Broadsword (Very Fast, Weak vs armor)" },
     "Mace":     { dmg: 24, cd: 1.5,  range: 0.9, speedMod: 0.0,  type: "melee", armorPen: 5, desc: "Heavy Mace (High Dmg, Slow, Strong vs armor)" },
     "Short Bow":{ dmg: 10, cd: 1.0, range: 25.0, speedMod: -0.10, type: "bow",    prepTime: 1.0, desc: "Short Bow (1s wind-up, 1s wind-down)" },
-    "Longbow":  { dmg: 13, cd: 1.0, range: 37, speedMod: -0.15, type: "bow",    prepTime: 2.0, desc: "Longbow (2s wind-up, 1s wind-down)" },
+    "Longbow":  { dmg: 13, cd: 1.0, range: 42, speedMod: -0.15, type: "bow",    prepTime: 2.0, desc: "Longbow (2s wind-up, 1s wind-down)" },
     "Crossbow": { dmg: 21, cd: 5.0, range: 30.0, speedMod: -0.20, type: "crossbow", armorPen: 8, reloadTime: 5.0, desc: "Crossbow (Needs 5s standstill after shot to reload)" },
     "Ballista": { dmg: 52, cd: 7.5, range: 50.0, speedMod: -0.50, type: "crossbow", reloadTime: 7.5, desc: "Ballista (7.5s reload, no dmg to stone)" },
     "Catapult": { dmg: 300, cd: 7.5, range: 50.0, speedMod: -0.50, type: "catapult", prepTime: 7.5, desc: "Catapult (7.5s prep, AOE, friendly fire)" },
@@ -740,7 +740,7 @@ document.getElementById("btn-close-pro-tips").addEventListener("click", () => {
     document.getElementById("pause-menu").style.display = "flex";
 });
 
-function buildHardBotCastle(cx, cz) {
+function buildBotCastle(cx, cz) {
     createEntity("keep", "blue", cx, cz);
     // 3-thick towering walls
     const layers = [16, 17, 18];
@@ -858,9 +858,10 @@ function buildHardBotCastle(cx, cz) {
     // Blue King + 10 Crossbowmen on keep
     const king = createEntity("king", "blue", cx, cz);
     king.y = getFloorHeight({y:10000}, cx, cz).y + 12; // on top of keep
+    king.mesh.position.set(king.x, king.y, king.z);
     for (let i = 0; i < 10; i++) {
         const u = createEntity("soldier", "blue", cx + (Math.random()-0.5)*4, cz + (Math.random()-0.5)*4);
-        u.y = king.y;
+        u.y = 10000; u.y = getFloorHeight(u, u.x, u.z).y;
         const config = { weapon: "Crossbow", armors: ["cloth", "leather", "chain", "plate"], hasHorse: false };
         applyEquipmentStats(u, config);
     }
@@ -870,12 +871,230 @@ function buildHardBotCastle(cx, cz) {
         if (walls.length > 0) {
             const w = walls[Math.floor(Math.random() * walls.length)];
             const u = createEntity("soldier", "blue", w.x, w.z);
-            u.y = getFloorHeight(u, u.x, u.z).y;
+            u.y = 10000; u.y = getFloorHeight(u, u.x, u.z).y;
             const config = { weapon: "Longbow", armors: ["cloth", "leather"], hasHorse: false };
             applyEquipmentStats(u, config);
         }
     }
 }
+
+function buildHardBotCastle(cx, cz) {
+    createEntity("keep", "blue", cx, cz);
+    // 3-thick towering walls
+    const layers = [16, 17, 18];
+    const wHeight = 10;
+    for (let layer of layers) {
+        const isOuter = (layer === 18);
+        
+        // Left wall
+        for (let z = cz - layer; z <= cz + layer; z++) {
+            let e;
+            if (Math.abs(z - cz) <= 1) e = createEntity("gatehouse", "blue", cx - layer, z);
+            else e = createEntity("wall_column", "blue", cx - layer, z);
+            e.height = wHeight; e.originalHeight = wHeight; e.exactHeight = wHeight;
+            if (e.type === "wall_column") e.blocks = Array.from({length: wHeight}, () => ({hp:100}));
+            else e.dimY = wHeight;
+            e.health = 100 * wHeight; e.maxHp = 100 * wHeight; e.maxHealth = 100 * wHeight;
+            e.isOuterWall = isOuter;
+            scene.remove(e.mesh); disposeHierarchy(e.mesh); e.mesh = buildEntityMesh(e); e.mesh.position.set(e.x, e.y, e.z); scene.add(e.mesh);
+        }
+        // Right wall
+        for (let z = cz - layer; z <= cz + layer; z++) {
+            let e;
+            if (Math.abs(z - cz) <= 1) e = createEntity("gatehouse", "blue", cx + layer, z);
+            else e = createEntity("wall_column", "blue", cx + layer, z);
+            e.height = wHeight; e.originalHeight = wHeight; e.exactHeight = wHeight;
+            if (e.type === "wall_column") e.blocks = Array.from({length: wHeight}, () => ({hp:100}));
+            else e.dimY = wHeight;
+            e.health = 100 * wHeight; e.maxHp = 100 * wHeight; e.maxHealth = 100 * wHeight;
+            e.isOuterWall = isOuter;
+            scene.remove(e.mesh); disposeHierarchy(e.mesh); e.mesh = buildEntityMesh(e); e.mesh.position.set(e.x, e.y, e.z); scene.add(e.mesh);
+        }
+        // Top wall
+        for (let x = cx - layer + 1; x <= cx + layer - 1; x++) {
+            let e;
+            if (Math.abs(x - cx) <= 1) e = createEntity("gatehouse", "blue", x, cz - layer);
+            else e = createEntity("wall_column", "blue", x, cz - layer);
+            e.height = wHeight; e.originalHeight = wHeight; e.exactHeight = wHeight;
+            if (e.type === "wall_column") e.blocks = Array.from({length: wHeight}, () => ({hp:100}));
+            else e.dimY = wHeight;
+            e.health = 100 * wHeight; e.maxHp = 100 * wHeight; e.maxHealth = 100 * wHeight;
+            e.isOuterWall = isOuter;
+            scene.remove(e.mesh); disposeHierarchy(e.mesh); e.mesh = buildEntityMesh(e); e.mesh.position.set(e.x, e.y, e.z); scene.add(e.mesh);
+        }
+        // Bottom wall
+        for (let x = cx - layer + 1; x <= cx + layer - 1; x++) {
+            let e;
+            if (Math.abs(x - cx) <= 1) e = createEntity("gatehouse", "blue", x, cz + layer);
+            else e = createEntity("wall_column", "blue", x, cz + layer);
+            e.height = wHeight; e.originalHeight = wHeight; e.exactHeight = wHeight;
+            if (e.type === "wall_column") e.blocks = Array.from({length: wHeight}, () => ({hp:100}));
+            else e.dimY = wHeight;
+            e.health = 100 * wHeight; e.maxHp = 100 * wHeight; e.maxHealth = 100 * wHeight;
+            e.isOuterWall = isOuter;
+            scene.remove(e.mesh); disposeHierarchy(e.mesh); e.mesh = buildEntityMesh(e); e.mesh.position.set(e.x, e.y, e.z); scene.add(e.mesh);
+        }
+    }
+    
+    // 4 Corner Towers (9-wide, 13-high)
+    const corners = [
+        {x: cx - 18, z: cz - 18},
+        {x: cx + 18, z: cz - 18},
+        {x: cx - 18, z: cz + 18},
+        {x: cx + 18, z: cz + 18}
+    ];
+    corners.forEach(c => {
+        const t = createEntity("tower", "blue", c.x, c.z);
+        t.material = "stone"; t.armor = 9; t.dimX = 9; t.dimZ = 9;
+        t.dimY = 13; t.height = 13; t.radius = 4;
+        t.footprint = [];
+        for (let tx = c.x - 4; tx <= c.x + 4; tx++) {
+            for (let tz = c.z - 4; tz <= c.z + 4; tz++) {
+                const isCren = (tx === c.x - 4 || tx === c.x + 4 || tz === c.z - 4 || tz === c.z + 4);
+                t.footprint.push({ x: tx, z: tz, isCren: isCren });
+            }
+        }
+        t.maxHp = t.footprint.length * 13 * 100;
+        t.maxHealth = t.maxHp; t.health = t.maxHp;
+        t.childTiles = [];
+        t.footprint.forEach(p => {
+            const child = createEntity("tower_tile", "blue", p.x, p.z);
+            child.parentId = t.id; child.material = "stone"; child.dimX = 1; child.dimY = 13; child.dimZ = 1; child.height = 13;
+            child.maxHealth = t.maxHp; child.health = t.maxHp;
+            t.childTiles.push(child.id);
+        });
+        scene.remove(t.mesh); disposeHierarchy(t.mesh); t.mesh = buildEntityMesh(t); t.mesh.position.set(t.x, t.y, t.z); scene.add(t.mesh);
+
+        // Add units to tower!
+        let spawnU = (type, wp, dx, dz, armorArr) => {
+            let u = createEntity(type, "blue", c.x + dx, c.z + dz);
+            u.y = 10000; u.y = getFloorHeight(u, u.x, u.z).y;
+            if (wp) applyEquipmentStats(u, { weapon: wp, armors: armorArr || [], hasHorse: false });
+        };
+        spawnU("siege_catapult", null, -2, -2);
+        spawnU("siege_ballista", null, 2, -2);
+        spawnU("siege_mangonel", null, -2, 2);
+        spawnU("siege_trebuchet", null, 2, 2);
+        for(let i=0; i<5; i++) spawnU("soldier", "Shield", (Math.random()-0.5)*6, (Math.random()-0.5)*6, ["plate", "chain", "leather", "cloth"]);
+        for(let i=0; i<10; i++) spawnU("soldier", "Crossbow", (Math.random()-0.5)*6, (Math.random()-0.5)*6, ["plate", "chain", "leather", "cloth"]);
+    });
+
+    // Central 20-high Tower for the King (3-wide)
+    const kt = createEntity("tower", "blue", cx, cz);
+    kt.material = "stone"; kt.armor = 9; kt.dimX = 3; kt.dimZ = 3;
+    kt.dimY = 20; kt.height = 20; kt.radius = 1;
+    kt.footprint = [];
+    for (let tx = cx - 1; tx <= cx + 1; tx++) {
+        for (let tz = cz - 1; tz <= cz + 1; tz++) {
+            const isCren = (tx === cx - 1 || tx === cx + 1 || tz === cz - 1 || tz === cz + 1);
+            kt.footprint.push({ x: tx, z: tz, isCren: isCren });
+        }
+    }
+    kt.maxHp = kt.footprint.length * 20 * 100;
+    kt.maxHealth = kt.maxHp; kt.health = kt.maxHp;
+    kt.childTiles = [];
+    kt.footprint.forEach(p => {
+        const child = createEntity("tower_tile", "blue", p.x, p.z);
+        child.parentId = kt.id; child.material = "stone"; child.dimX = 1; child.dimY = 20; child.dimZ = 1; child.height = 20;
+        child.maxHealth = kt.maxHp; child.health = kt.maxHp;
+        kt.childTiles.push(child.id);
+    });
+    scene.remove(kt.mesh); disposeHierarchy(kt.mesh); kt.mesh = buildEntityMesh(kt); kt.mesh.position.set(kt.x, kt.y, kt.z); scene.add(kt.mesh);
+
+    // 1-high wooden fence 10 units away (layer 28) with gates!
+    const fenceLayer = 28;
+    for (let x = cx - fenceLayer; x <= cx + fenceLayer; x++) {
+        for (let z of [cz - fenceLayer, cz + fenceLayer]) {
+            let e;
+            if (Math.abs(x - cx) <= 1) e = createEntity("gatehouse", "blue", x, z);
+            else e = createEntity("wall_column", "blue", x, z);
+            
+            e.material = "wood"; e.armor = 5; e.height = 1; e.originalHeight = 1; e.exactHeight = 1;
+            if (e.type === "wall_column") {
+                e.blocks = [{hp:100}];
+            } else {
+                e.dimY = 1;
+            }
+            e.health = 100; e.maxHp = 100; e.maxHealth = 100; e.isOuterWall = true;
+            scene.remove(e.mesh); disposeHierarchy(e.mesh); e.mesh = buildEntityMesh(e); e.mesh.position.set(e.x, e.y, e.z); scene.add(e.mesh);
+        }
+    }
+    for (let z = cz - fenceLayer + 1; z <= cz + fenceLayer - 1; z++) {
+        for (let x of [cx - fenceLayer, cx + fenceLayer]) {
+            let e;
+            if (Math.abs(z - cz) <= 1) e = createEntity("gatehouse", "blue", x, z);
+            else e = createEntity("wall_column", "blue", x, z);
+            
+            e.material = "wood"; e.armor = 5; e.height = 1; e.originalHeight = 1; e.exactHeight = 1;
+            if (e.type === "wall_column") {
+                e.blocks = [{hp:100}];
+            } else {
+                e.dimY = 1;
+            }
+            e.health = 100; e.maxHp = 100; e.maxHealth = 100; e.isOuterWall = true;
+            scene.remove(e.mesh); disposeHierarchy(e.mesh); e.mesh = buildEntityMesh(e); e.mesh.position.set(e.x, e.y, e.z); scene.add(e.mesh);
+        }
+    }
+
+    // 6 Houses (Left top and bottom)
+    createEntity("house", "blue", cx - 8, cz - 8);
+    createEntity("house", "blue", cx - 8, cz - 4);
+    createEntity("house", "blue", cx - 4, cz - 8);
+    createEntity("house", "blue", cx - 8, cz + 8);
+    createEntity("house", "blue", cx - 8, cz + 4);
+    createEntity("house", "blue", cx - 4, cz + 8);
+    // 1 Barracks (Right bottom)
+    createEntity("barracks", "blue", cx + 8, cz + 8);
+    // 1 Siege Shop (Right top)
+    createEntity("siegeshop", "blue", cx + 8, cz - 8);
+    
+    // Force path grid update so spawned units on walls are properly elevated
+    updatePathGrid();
+    updateRegionGrid();
+    needsPathGridUpdate = false;
+    
+    // Blue King on 20-high central tower, troops on the keep roof
+    const king = createEntity("king", "blue", cx, cz);
+    king.y = 10000; king.y = getFloorHeight(king, king.x, king.z).y;
+    king.mesh.position.set(king.x, king.y, king.z);
+    king.mesh.rotation.y = Math.atan2(-80 - king.x, -40 - king.z);
+    king.speed = 0; // Lock the king in place so he doesn't wander off the tower
+    
+    const keepSpawns = [
+        {x: 2.2, z: 2.2}, {x: -2.2, z: -2.2}, {x: 2.2, z: -2.2}, {x: -2.2, z: 2.2},
+        {x: 2.2, z: 0.7}, {x: 2.2, z: -0.7},
+        {x: -2.2, z: 0.7}, {x: -2.2, z: -0.7},
+        {x: 0.7, z: 2.2}, {x: -0.7, z: 2.2},
+        {x: 0.7, z: -2.2}, {x: -0.7, z: -2.2}
+    ];
+    
+    for (let i = 0; i < 2; i++) {
+        const pos = keepSpawns.shift();
+        const rk = createEntity("soldier", "blue", cx + pos.x, cz + pos.z);
+        rk.y = 10000; rk.y = getFloorHeight(rk, rk.x, rk.z).y;
+        applyEquipmentStats(rk, { weapon: "RoyalKnight", armors: [], hasHorse: true });
+    }
+    
+    for (let i = 0; i < 10; i++) {
+        const pos = keepSpawns.shift();
+        const u = createEntity("soldier", "blue", cx + pos.x, cz + pos.z);
+        u.y = 10000; u.y = getFloorHeight(u, u.x, u.z).y;
+        applyEquipmentStats(u, { weapon: "Crossbow", armors: ["cloth", "leather", "chain", "plate"], hasHorse: false });
+    }
+    
+    // Longbowmen on walls
+    for (let i = 0; i < 15; i++) {
+        const walls = entities.filter(e => e.type === "wall_column" && e.faction === "blue" && e.isOuterWall);
+        if (walls.length > 0) {
+            const w = walls[Math.floor(Math.random() * walls.length)];
+            const u = createEntity("soldier", "blue", w.x, w.z);
+            u.y = 10000; u.y = getFloorHeight(u, u.x, u.z).y;
+            applyEquipmentStats(u, { weapon: "Longbow", armors: ["cloth", "leather"], hasHorse: false });
+        }
+    }
+}
+
+
 
 function disposeHierarchy(node) {
     if (!node) return;
@@ -1448,8 +1667,10 @@ function createInitialBases() {
     const blueKeepX = 80;
     const blueKeepZ = 40;
     const blueKeepY = getTerrainHeight(blueKeepX, blueKeepZ);
-    if (gameDifficulty !== "test") {
+    if (gameDifficulty === "hard") {
         buildHardBotCastle(blueKeepX, blueKeepZ);
+    } else if (gameDifficulty !== "test") {
+        buildBotCastle(blueKeepX, blueKeepZ);
     } else {
         const blueKeep = createEntity("keep", "blue", blueKeepX, blueKeepZ);
         blueKeep.mesh.rotation.y = Math.PI; // Flip door to the left side
@@ -4819,7 +5040,9 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             const distToTarget = Math.hypot(unit.x - unit.targetPosition.x, unit.z - unit.targetPosition.z);
             if (distToTarget <= reach) {
                 convertPeasantToSoldier(unit, b);
-                unit.targetPosition = null;
+                if (!b.rallyPoint) {
+                    unit.targetPosition = null;
+                }
                 unit.path = null;
             }
         }
@@ -6893,7 +7116,19 @@ function convertPeasantToSiegeUnit(peasant, shop) {
             }
         });
         
-        if (shop.rallyPoint) {
+        if (shop.rallyCommand) {
+            siegeEnt.targetPosition = shop.rallyCommand.targetPosition.clone();
+            siegeEnt.state = shop.rallyCommand.state;
+            if (siegeEnt.state === "fightmove") {
+                siegeEnt.fightMoveDestination = siegeEnt.targetPosition.clone();
+            }
+            if (siegeEnt.state === "help") {
+                siegeEnt.helpTarget = siegeEnt.targetPosition.clone();
+                siegeEnt.savedHelpTarget = siegeEnt.targetPosition.clone();
+            }
+            siegeEnt.targetEntity = shop.rallyCommand.targetEntity || null;
+            siegeEnt.isExplicitAttack = (siegeEnt.state === "fightmove" && siegeEnt.targetEntity);
+        } else if (shop.rallyPoint) {
             siegeEnt.targetPosition = shop.rallyPoint.clone();
             siegeEnt.state = "moving";
         }
@@ -7527,7 +7762,7 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                             worker.targetPosition = null;
                         }
                     }
-                    if (b.type === "stables") {
+                    if (b.type === 'stables') {
                         b.inventory = b.inventory || { horse: 0 };
                         if (b.inventory.horse >= 5) return;
                     }
@@ -7605,10 +7840,22 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                     const dist = Math.hypot(b.x - worker.x, b.z - worker.z);
                     let arrived = dist <= (b.radius || 3.0) + 2.0;
                     if (arrived) {
-                        worker.state = "worker_crafting";
-                        worker.targetPosition = null;
-                        worker.workTimer = 0;
-                        if (worker.mesh) worker.mesh.visible = false;
+                        if (b.type === "stables") {
+                            b.inventory = b.inventory || { horse: 0 };
+                            if (b.inventory.horse < 5) {
+                                b.inventory.horse++;
+                                spawnFloatingText("+1 Horse", b.x, b.y + 3.0, b.z, 0xd4af37);
+                            }
+                            worker.state = "shop_worker";
+                            worker.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
+                            if (worker.mesh) worker.mesh.visible = true;
+                            updateUI();
+                        } else {
+                            worker.state = "worker_crafting";
+                            worker.targetPosition = null;
+                            worker.workTimer = 0;
+                            if (worker.mesh) worker.mesh.visible = false;
+                        }
                     }
                 } else if (worker.state === "worker_crafting") {
                     worker.workTimer += deltaTime;
@@ -7629,18 +7876,7 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                         }
                     }
                     if (worker.workTimer >= activeProd.time) {
-                        if (b.type === "stables") {
-                            b.inventory = b.inventory || { horse: 0 };
-                            if (b.inventory.horse < 5) {
-                                b.inventory.horse++;
-                                spawnFloatingText("+1 Horse", b.x, b.y + 3.0, b.z, 0xd4af37);
-                            }
-                            worker.state = "shop_worker";
-                            worker.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
-                            if (worker.mesh) worker.mesh.visible = true;
-                            updateUI();
-                        } else {
-                            // Craft complete! Find nearest dropoff
+                        // Craft complete! Find nearest dropoff
                             let drop = null;
                             if (activeProd.type === "premium_food" || activeProd.type === "brew" || activeProd.type === "furniture" || activeProd.type === "gem") {
                                 drop = findNearestDropoff(worker.x, worker.z, worker.faction);
@@ -7661,7 +7897,6 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                                 worker.path = null;
                                 if (worker.mesh) worker.mesh.visible = true;
                             }
-                        }
                     }
                 } else if (worker.state === "worker_delivering_item") {
                     if (!worker.targetBuilding || worker.targetBuilding.state === "dead") {
@@ -8471,7 +8706,7 @@ function applyEquipmentStats(peasant, config) {
     if (config.weapon === "Thug") {
         peasant.maxHealth = 177;
         peasant.health = 177;
-        peasant.armor = 1;
+        peasant.armor = 3;
         peasant.speed = 2.77;
     } else if (config.weapon === "Doppelsoldner") {
         peasant.maxHealth = 177;
@@ -8582,7 +8817,19 @@ function convertPeasantToSoldier(peasant, barracks) {
         peasant.isDisguised = true;
         peasant.disguiseTimer = 0;
     }
-    if (barracks.rallyPoint) {
+    if (barracks.rallyCommand) {
+        peasant.targetPosition = barracks.rallyCommand.targetPosition.clone();
+        peasant.state = barracks.rallyCommand.state;
+        if (peasant.state === "fightmove") {
+            peasant.fightMoveDestination = peasant.targetPosition.clone();
+        }
+        if (peasant.state === "help") {
+            peasant.helpTarget = peasant.targetPosition.clone();
+            peasant.savedHelpTarget = peasant.targetPosition.clone();
+        }
+        peasant.targetEntity = barracks.rallyCommand.targetEntity || null;
+        peasant.isExplicitAttack = (peasant.state === "fightmove" && peasant.targetEntity);
+    } else if (barracks.rallyPoint) {
         peasant.targetPosition = barracks.rallyPoint.clone();
         peasant.state = "moving";
         peasant.isExplicitAttack = false;
@@ -9225,7 +9472,21 @@ function onMouseDown(e) {
                         count++;
                     }
                 });
-                showStatusLog(e.shiftKey ? "Queued Attack Ground!" : "Attack Ground commanded.");
+                
+                const milBldgs = selectedEntities.filter(b => b.faction === "red" && ["barracks", "mercenary_post", "siegeshop"].includes(b.type));
+                if (milBldgs.length > 0) {
+                    milBldgs.forEach(b => {
+                        b.rallyPoint = pt.clone();
+                        b.rallyCommand = {
+                            state: "attack_ground",
+                            targetPosition: pt.clone(),
+                            targetEntity: null
+                        };
+                    });
+                    showStatusLog("Attack Ground Rally point set!");
+                } else {
+                    showStatusLog(e.shiftKey ? "Queued Attack Ground!" : "Attack Ground commanded.");
+                }
             }
             return;
         }
@@ -9270,23 +9531,39 @@ function onMouseDown(e) {
             if (helpMode) {
                 if (hitEnt && hitEnt.state !== "dead") {
                     const mobileUnits = selectedEntities.filter(unit => unit.faction === "red" && unit.baseSpeed > 0);
-                    mobileUnits.forEach(unit => {
-                        if (unit === hitEnt) return;
-                        let cmd = {
-                            state: "help",
-                            helpTarget: hitEnt,
-                            targetPosition: null,
-                            targetEntity: null,
-                            fightMoveDestination: null
-                        };
-                        enqueueOrExecute(unit, e, cmd);
-                    });
-                    showStatusLog("Helping " + hitEnt.type);
+                    const milBldgs = selectedEntities.filter(b => b.faction === "red" && ["barracks", "mercenary_post", "siegeshop"].includes(b.type));
+                    
+                    if (mobileUnits.length > 0) {
+                        mobileUnits.forEach(unit => {
+                            if (unit === hitEnt) return;
+                            let cmd = {
+                                state: "help",
+                                helpTarget: hitEnt,
+                                targetPosition: null,
+                                targetEntity: null,
+                                fightMoveDestination: null
+                            };
+                            enqueueOrExecute(unit, e, cmd);
+                        });
+                        showStatusLog("Helping " + hitEnt.type);
+                    }
+                    if (milBldgs.length > 0) {
+                        milBldgs.forEach(b => {
+                            b.rallyPoint = pt.clone();
+                            b.rallyCommand = {
+                                state: "help",
+                                targetPosition: pt.clone(),
+                                targetEntity: hitEnt
+                            };
+                        });
+                        showStatusLog("Help Rally point set!");
+                    }
                 } else {
                     showStatusLog("Invalid help target.");
                 }
                 helpMode = false;
                 document.body.style.cursor = "default";
+                if (helpGroundIndicator) helpGroundIndicator.visible = false;
                 return;
             }
 
@@ -9367,10 +9644,26 @@ function onMouseDown(e) {
         } else {
             const milBldgs = selectedEntities.filter(b => b.faction === "red" && ["barracks", "mercenary_post", "siegeshop"].includes(b.type));
             if (milBldgs.length > 0) {
+                let cmdState = "moving";
+                if (isFightMoveQueued) cmdState = "fightmove";
+                if (helpMode) cmdState = "help";
+                
                 milBldgs.forEach(b => {
                     b.rallyPoint = pt.clone();
+                    b.rallyCommand = {
+                        state: cmdState,
+                        targetPosition: pt.clone(),
+                        targetEntity: clickedEnemy
+                    };
                 });
-                showStatusLog("Rally point set!");
+                showStatusLog(cmdState === "fightmove" ? "Fight Move Rally point set!" : (cmdState === "help" ? "Help Rally point set!" : "Rally point set!"));
+                
+                // Clear the queued modes after issuing
+                isFightMoveQueued = false;
+                helpMode = false;
+                document.body.style.cursor = "default";
+                if (fightMoveIndicator) fightMoveIndicator.visible = false;
+                if (helpGroundIndicator) helpGroundIndicator.visible = false;
             }
         }
     }
@@ -10008,7 +10301,9 @@ function onKeyDown(e) {
     }
     // F key queues Fight Move (attack-move)
     if (e.code === "KeyF") {
-        if (selectedEntities.some(u => u.baseSpeed > 0 && u.faction === "red")) {
+        const hasMobileUnit = selectedEntities.some(u => u.baseSpeed > 0 && u.faction === "red");
+        const hasMilBldg = selectedEntities.some(ent => ent.faction === "red" && ["barracks", "mercenary_post", "siegeshop"].includes(ent.type));
+        if (hasMobileUnit || hasMilBldg) {
             isFightMoveQueued = true;
             if (attackGroundMode) {
                 attackGroundMode = false;
@@ -12555,9 +12850,6 @@ function dealDamage(attacker, victim, amount) {
         if (isStone && wStats && (wStats.type === "bow" || wStats.type === "crossbow")) {
             amount = 0;
         }
-        if (attacker.weapon === "Assassin" && isBuilding) {
-            amount = 10;
-        }
         // Break attacker disguise
         if (attacker.weapon === "Spy") {
             attacker.isDisguised = false;
@@ -13906,3 +14198,5 @@ function updateDefenses(deltaTime) {
         }
     });
 }
+
+
