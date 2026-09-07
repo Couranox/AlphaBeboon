@@ -4398,6 +4398,10 @@ function handleSpawning(deltaTime) {
                             } else {
                                 let needed = 10;
                                 let premiumToUse = Math.min(needed, resources.premium_food || 0);
+                                if (premiumToUse > 0) {
+                                    resources.gold += premiumToUse * 1;
+                                    spawnFloatingText("+" + (premiumToUse * 1) + " Gold", entity.x, entity.y + 4.0, entity.z, 0xffd700);
+                                }
                                 if (resources.premium_food !== undefined) {
                                     resources.premium_food -= premiumToUse;
                                 }
@@ -6547,8 +6551,16 @@ function handleCombat(deltaTime, combatants) {
             }
             if (unit.cooldownTimer <= 0 && stanceReady) {
                 unit.cooldownTimer = wStats.cd;
-                if (unit.faction === "blue" && gameDifficulty !== "test" && (unit.weapon === "Spear" || unit.weapon === "Pike")) {
-                    unit.kiteTimer = 1.0 + Math.random(); // 1 to 2 seconds of kiting
+                if (unit.faction === "blue" && gameDifficulty !== "test") {
+                    if (unit.weapon === "Spear" || unit.weapon === "Pike" || unit.weapon === "Halberd") {
+                        unit.kiteTimer = 1.0 + Math.random();
+                    } else if (unit.weapon === "Longbow") {
+                        unit.kiteTimer = 2.0;
+                    } else if (unit.weapon === "Short Bow") {
+                        unit.kiteTimer = unit.hasHorse ? 2.0 : 1.0;
+                    } else if (unit.weapon === "Slinger") {
+                        unit.kiteTimer = 1.0;
+                    }
                 }
                 if (isRanged) {
                     if (unit.weapon === "Mangonel") {
@@ -10501,7 +10513,9 @@ function spawnHardBotUnit() {
                 else if (rArmor < 0.6) config.armors = ["cloth", "leather"];
                 else if (rArmor < 0.8) config.armors = ["cloth", "leather", "chain"];
                 else config.armors = ["cloth", "leather", "chain", "plate"];
-                config.hasHorse = Math.random() < 0.2;
+                let horseChance = 0.2;
+                if (config.weapon === "Short Bow") horseChance += 0.42;
+                config.hasHorse = Math.random() < horseChance;
             }
             if (Math.random() < 0.5) config.armors = [];
             applyEquipmentStats(u, config);
@@ -10534,7 +10548,9 @@ function spawnHardBotUnit() {
             else if (rArmor < 0.75) config.armors = ["cloth", "leather"];
             else if (rArmor < 0.90) config.armors = ["cloth", "leather", "chain"];
             else config.armors = ["cloth", "leather", "chain", "plate"];
-            config.hasHorse = Math.random() < 0.2;
+            let horseChance = 0.2;
+            if (config.weapon === "Short Bow") horseChance += 0.42;
+            config.hasHorse = Math.random() < horseChance;
             applyEquipmentStats(u, config);
             u.isWaveUnit = "building";
             u.state = "idle";
@@ -10664,7 +10680,7 @@ function runHardModeAI(deltaTime) {
             }
         });
     }
-    // Spear/Pike Kiting logic
+    // Spear/Pike/Halberd Kiting logic
     entities.forEach(u => {
         if (u.faction === "blue" && u.kiteTimer > 0) {
             u.kiteTimer -= deltaTime;
@@ -12256,7 +12272,11 @@ function gameLoop(timestamp) {
     }
     if (!isGameOver) {
         if (gameFrameCount % 30 === 0) handleSpawning(deltaTime * 30);
-        if (gameFrameCount % 60 === 0 && window.handleAutoTrade) window.handleAutoTrade();
+        window.autoTradeTimer = (window.autoTradeTimer || 0) + deltaTime;
+        if (window.autoTradeTimer >= 1.0) {
+            window.autoTradeTimer -= 1.0;
+            if (window.handleAutoTrade) window.handleAutoTrade();
+        }
         if (gameFrameCount % 15 === 0) {
             if (selectedEntities.length > 0) updateSelectionHUD();
             entities.forEach(e => {
