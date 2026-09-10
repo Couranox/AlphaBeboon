@@ -43,6 +43,9 @@ const WORKER_STATES = new Set([
     "returning_payload", "going_home", "training", "siege_training", "siege_waiting",
     "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "siege_pilot", "cutting_wood"
 ]);
+const STUCK_RETAIN_STATES = new Set([
+    "attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"
+]);
 // Base Unit Stats
 const BASE_STATS = {
     king:    { maxHp: 500, speed: 2.0, armor: 5, radius: 0.4, height: 2.0, color: 0xffd700 }, // Gold armor King
@@ -607,10 +610,9 @@ function getFloorHeight(unit, nextX, nextZ) {
         // Fallback for microscopic diagonal gaps between blocks (only for walls)
         const bx = Math.floor(nextX);
         const bz = Math.floor(nextZ);
-        const cells = [ [bx, bz], [bx + 1, bz], [bx, bz + 1], [bx + 1, bz + 1] ];
-        for (let cell of cells) {
-            const cx = cell[0];
-            const cz = cell[1];
+        for (let _i = 0; _i < 4; _i++) {
+            const cx = bx + (_i % 2);
+            const cz = bz + Math.floor(_i / 2);
             if (Math.hypot(cx - nextX, cz - nextZ) <= 0.55) {
                 if (cx >= -150 && cx < 150 && cz >= -150 && cz < 150) {
                     let surfs = pathGrid[(cz + 150) * 300 + (cx + 150)];
@@ -627,15 +629,14 @@ function getFloorHeight(unit, nextX, nextZ) {
         }
     }
 
-    return { 
-        y: floorHeight, 
-        onWall: onWall,
-        isRamp: !!rampEntity,
-        rampDx: rampEntity ? rampEntity.rampDx : 0,
-        rampDz: rampEntity ? rampEntity.rampDz : 0,
-        ejectX: ejectX,
-        ejectZ: ejectZ
-    };
+    _sharedFloorResult.y = floorHeight;
+    _sharedFloorResult.onWall = onWall;
+    _sharedFloorResult.isRamp = !!rampEntity;
+    _sharedFloorResult.rampDx = rampEntity ? rampEntity.rampDx : 0;
+    _sharedFloorResult.rampDz = rampEntity ? rampEntity.rampDz : 0;
+    _sharedFloorResult.ejectX = ejectX;
+    _sharedFloorResult.ejectZ = ejectZ;
+    return _sharedFloorResult;
 }
 // --- INITIALIZATION ---
 setInterval(() => {
@@ -4436,7 +4437,7 @@ function handlePeasantWander(entity, deltaTime) {
     if (entity.type !== "peasant" || entity.state !== "wander") return;
     if (!entity.homeBuilding || entity.homeBuilding.state === "dead") return;
     if ((entity.payloadAmount && entity.payloadAmount > 0) || entity.craftedItem) {
-        const keep = entities.find(e => e.type === "keep" && e.faction === entity.faction && e.state !== "dead" && !e.isPlanned);
+        const keep = (window.__gameStateCache ? (entity.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
         if (keep) {
             const dx = entity.x - keep.x;
             const dz = entity.z - keep.z;
@@ -4510,7 +4511,7 @@ function handlePeasantWander(entity, deltaTime) {
 function buildCarriedMap(faction, skipUnit = null) {
     let carriedMap = new Map();
     const plannedWalls = entities.filter(e => e.faction === faction && e.isPlanned && e.state !== "dead" && !e.isUnreachable && (e.type === "wall_column" || e.type === "gatehouse" || e.type === "wall_ramp" || e.type === "tower"));
-    const keep = entities.find(k => k.type === "keep" && k.faction === faction && !k.isPlanned);
+    const keep = (window.__gameStateCache ? (faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
     plannedWalls.sort((a, b) => {
         const getCat = (e) => {
             if (e.type === "gatehouse") return 4;
@@ -4575,7 +4576,7 @@ function findNextChainedWall(unit, isFetching = false, fallbackRef = null) {
         return true;
     });
     if (plannedWalls.length > 0) {
-        const keep = entities.find(k => k.type === "keep" && k.faction === unit.faction && k.state !== "dead" && !k.isPlanned);
+        const keep = (window.__gameStateCache ? (unit.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
         plannedWalls.sort((a, b) => {
             const getCat = (e) => {
                 if (e.type === "gatehouse") return 4;
@@ -4694,7 +4695,7 @@ function consumeBlueprintResources(b) {
                 if (p.payloadAmount > 0) {
                     p.state = "returning_payload";
                     p.payloadResource = rType;
-                    const keep = entities.find(k => k.type === "keep" && k.faction === p.faction && k.state !== "dead" && !k.isPlanned);
+                    const keep = (window.__gameStateCache ? (p.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                     if (keep) p.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
                 } else {
                     p.intendedFetchAmount = 0;
@@ -4725,7 +4726,7 @@ function refundBlueprintResources(b) {
                 if (p.payloadAmount > 0) {
                     p.state = "returning_payload";
                     p.payloadResource = rType;
-                    const keep = entities.find(k => k.type === "keep" && k.faction === p.faction && k.state !== "dead" && !k.isPlanned);
+                    const keep = (window.__gameStateCache ? (p.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                     if (keep) p.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
                 } else {
                     p.intendedFetchAmount = 0;
@@ -4901,7 +4902,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 if (!reassigned) {
                     if (unit.payloadAmount > 0 || (unit.state === "constructing_fetching" && unit.payloadAmount > 0)) {
                         unit.state = "returning_payload";
-                        const keep = entities.find(k => k.type === "keep" && k.faction === unit.faction && k.state !== "dead" && !k.isPlanned);
+                        const keep = (window.__gameStateCache ? (unit.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                         if (keep) unit.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
                     } else {
                         if (unit.homeBuilding && unit.homeBuilding.state !== "dead") {
@@ -4958,7 +4959,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         completeBuilding(b);
                     } else if (b.resourcesDelivered < b.resourcesNeededTotal) {
                         unit.state = "constructing_fetching";
-                        const keep = entities.find(k => k.type === "keep" && k.faction === unit.faction && k.state !== "dead" && !k.isPlanned);
+                        const keep = (window.__gameStateCache ? (unit.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                         if (keep) {
                             unit.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
                         }
@@ -5131,7 +5132,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                             if (regionGrid[sz * 300 + sx] === 65535) {
                                 unit.stuckCount = 4;
                                 unit.progressFrames = 999;
-                            } else if (!["attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"].includes(unit.state)) {
+                            } else if (!STUCK_RETAIN_STATES.has(unit.state)) {
                                 unit.targetPosition = null;
                                 if (unit.state === "moving" || unit.state === "fightmove") {
                                     if (!processNextCommand(unit)) unit.state = (unit.type === "peasant") ? "wander" : "idle";
@@ -5997,7 +5998,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                     let rType = b.material || ((b.type === "wall_column" || b.type === "gatehouse" || b.type === "wall_ramp") ? "stone" : "wood");
                     let unassignedCost = (b.resourcesNeededTotal || 0) - (b.resourcesDelivered || 0);
                     let keepDist = 0;
-                    const keep = entities.find(e => e.type === "keep" && e.faction === b.faction && e.state !== "dead" && !e.isPlanned);
+                    const keep = (window.__gameStateCache ? (b.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                     if (keep) {
                         keepDist = Math.hypot(b.x - keep.x, b.z - keep.z);
                     }
@@ -6554,11 +6555,11 @@ function handleCombat(deltaTime, combatants) {
                 if (unit.faction === "blue" && gameDifficulty !== "test") {
                     if (unit.weapon === "Spear" || unit.weapon === "Pike" || unit.weapon === "Halberd") {
                         unit.kiteTimer = 1.0 + Math.random();
-                    } else if (unit.weapon === "Longbow") {
+                    } else if (unit.weapon === "Longbow" && dist <= 25.0) {
                         unit.kiteTimer = 2.0;
-                    } else if (unit.weapon === "Short Bow") {
+                    } else if (unit.weapon === "Short Bow" && dist <= 10.0) {
                         unit.kiteTimer = unit.hasHorse ? 2.0 : 1.0;
-                    } else if (unit.weapon === "Slinger") {
+                    } else if (unit.weapon === "Slinger" && dist <= 10.0) {
                         unit.kiteTimer = 1.0;
                     }
                 }
@@ -8297,7 +8298,7 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
 }
 // Helpers
 function getHorseStats(faction) {
-    const stables = entities.filter(e => e.type === "stables" && e.faction === faction && !e.isDead);
+    const stables = (window.__gameStateCache ? window.__gameStateCache.stables.filter(s => s.faction === faction) : entities.filter(e => e.type === "stables" && e.faction === faction && !e.isDead));
     let cap = 0;
     stables.forEach(s => {
         if (s.inventory && s.inventory.horse) cap += s.inventory.horse;
@@ -9935,7 +9936,7 @@ function onMouseUp(e) {
                         } else {
                             cmd.state = "constructing_fetching";
                             cmd.intendedFetchAmount = 20;
-                            const keep = entities.find(k => k.type === "keep" && k.faction === unit.faction && !k.isPlanned && k.state !== "dead");
+                            const keep = (window.__gameStateCache ? (unit.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                             if (keep) {
                                 cmd.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
                             } else {
@@ -9988,7 +9989,7 @@ function onMouseUp(e) {
                         } else {
                             cmd.state = "constructing_fetching";
                             cmd.intendedFetchAmount = 20;
-                            const keep = entities.find(k => k.type === "keep" && k.faction === unit.faction && !k.isPlanned && k.state !== "dead");
+                            const keep = (window.__gameStateCache ? (unit.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                             if (keep) {
                                 cmd.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
                             } else {
@@ -10435,13 +10436,13 @@ function runAI(deltaTime) {
     aiActionTimer -= deltaTime;
     if (aiActionTimer > 0) return;
     aiActionTimer = 10.0 + Math.random() * 10.0;
-    const blueKeep = entities.find(e => e.type === "keep" && e.faction === "blue");
+    const blueKeep = (window.__gameStateCache ? window.__gameStateCache.blueKeep : null);
     const blueKing = entities.find(e => e.type === "king" && e.faction === "blue");
     if (!blueKeep || !blueKing) return;
     const bluePeasants = entities.filter(e => e.type === "peasant" && e.faction === "blue" && e.state !== "dead");
     const blueSoldiers = entities.filter(e => e.type === "soldier" && e.faction === "blue" && e.state !== "dead");
-    const blueHouses = entities.filter(e => e.type === "house" && e.faction === "blue" && e.state !== "dead");
-    const blueBarracks = entities.filter(e => e.type === "barracks" && e.faction === "blue" && e.state !== "dead");
+    const blueHouses = (window.__gameStateCache ? window.__gameStateCache.blueHouses : entities.filter(e => e.type === "house" && e.faction === "blue" && e.state !== "dead"));
+    const blueBarracks = (window.__gameStateCache ? window.__gameStateCache.blueBarracks : entities.filter(e => e.type === "barracks" && e.faction === "blue" && e.state !== "dead"));
     // Base Construction
     if (blueHouses.length < 2) {
         const angle = Math.random() * Math.PI * 2;
@@ -10487,7 +10488,7 @@ function runAI(deltaTime) {
     }
 }
 function spawnHardBotUnit() {
-    const blueKeep = entities.find(e => e.type === "keep" && e.faction === "blue");
+    const blueKeep = (window.__gameStateCache ? window.__gameStateCache.blueKeep : null);
     if (!blueKeep) return;
     
     if (gameDifficulty === "easy") {
@@ -10596,12 +10597,12 @@ function runHardModeAI(deltaTime) {
     hardBotAiTimer -= deltaTime;
     if (hardBotAiTimer <= 0) {
         hardBotAiTimer = 10.0 + Math.random() * 10.0;
-        const redKeep = entities.find(e => e.type === "keep" && e.faction === "red");
+        const redKeep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null);
         entities.forEach(u => {
             if (u.faction === "blue" && u.state !== "dead" && u.isWaveUnit !== "building" && (u.isWaveUnit === true || u.type.startsWith("siege_"))) {
                 let target = null;
                 if (u.hasHorse && redKeep) {
-                    const blueKeep = entities.find(e => e.type === "keep" && e.faction === "blue");
+                    const blueKeep = (window.__gameStateCache ? window.__gameStateCache.blueKeep : null);
                     if (!u.flankPoint && blueKeep) {
                         const isTop = Math.random() < 0.5;
                         if (isTop) {
@@ -10685,16 +10686,20 @@ function runHardModeAI(deltaTime) {
         if (u.faction === "blue" && u.kiteTimer > 0) {
             u.kiteTimer -= deltaTime;
             if (u.kiteTimer > 0) {
-                u.state = "moving";
-                u.targetEntity = null;
-                u.path = null;
-                const blueKeep = entities.find(e => e.type === "keep" && e.faction === "blue");
-                if (blueKeep) {
-                    u.targetPosition = new THREE.Vector3(blueKeep.x, getTerrainHeight(blueKeep.x, blueKeep.z), blueKeep.z);
+                if (u.state !== "moving" || !u._isKitingFlag) {
+                    u.state = "moving";
+                    u.targetEntity = null;
+                    u.path = null; // Clear path ONCE when kiting starts
+                    u._isKitingFlag = true;
+                    const blueKeep = window.__gameStateCache ? window.__gameStateCache.blueKeep : (window.__gameStateCache ? window.__gameStateCache.blueKeep : null);
+                    if (blueKeep) {
+                        u.targetPosition = new THREE.Vector3(blueKeep.x, getTerrainHeight(blueKeep.x, blueKeep.z), blueKeep.z);
+                    }
                 }
             } else {
                 u.state = "fightmove";
                 u.path = null;
+                u._isKitingFlag = false;
                 if (u.fightMoveDestination) {
                     u.targetPosition = u.fightMoveDestination.clone();
                 }
@@ -10755,9 +10760,9 @@ function forceUpdateUI() {
         BUILDING_TYPES["market"].cost = 20;
         BUILDING_TYPES["market"].goldCost = 10;
     }
-    const redKeep = entities.find(e => e.type === "keep" && e.faction === "red" && e.state !== "dead");
-    const redHouses = entities.filter(e => e.type === "house" && e.faction === "red" && e.state !== "dead");
-    const redBarracks = entities.filter(e => e.type === "barracks" && e.faction === "red" && e.state !== "dead");
+    const redKeep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null);
+    const redHouses = (window.__gameStateCache ? window.__gameStateCache.redHouses : entities.filter(e => e.type === "house" && e.faction === "red" && e.state !== "dead"));
+    const redBarracks = (window.__gameStateCache ? window.__gameStateCache.redBarracks : entities.filter(e => e.type === "barracks" && e.faction === "red" && e.state !== "dead"));
     let cap = redKeep ? BUILDING_TYPES.keep.peasantCap : 0;
     redHouses.forEach(() => { cap += BUILDING_TYPES.house.peasantCap; });
     let currentPop = 0;
@@ -12330,6 +12335,39 @@ function gameLoop(timestamp) {
                 }
             }
         });
+        
+        if (!window.__gameStateCache) window.__gameStateCache = {
+            redKeep: null, blueKeep: null,
+            redHouses: [], blueHouses: [],
+            redBarracks: [], blueBarracks: [],
+            stables: [], plannedBuildings: []
+        };
+        const gsc = window.__gameStateCache;
+        gsc.redKeep = null; gsc.blueKeep = null;
+        gsc.redHouses.length = 0; gsc.blueHouses.length = 0;
+        gsc.redBarracks.length = 0; gsc.blueBarracks.length = 0;
+        gsc.stables.length = 0; gsc.plannedBuildings.length = 0;
+        
+        for (let i = 0; i < buildings.length; i++) {
+            const e = buildings[i];
+            if (e.isPlanned) {
+                gsc.plannedBuildings.push(e);
+                continue;
+            }
+            if (e.type === "keep") {
+                if (e.faction === "red") gsc.redKeep = e;
+                else if (e.faction === "blue") gsc.blueKeep = e;
+            } else if (e.type === "house") {
+                if (e.faction === "red") gsc.redHouses.push(e);
+                else if (e.faction === "blue") gsc.blueHouses.push(e);
+            } else if (e.type === "barracks") {
+                if (e.faction === "red") gsc.redBarracks.push(e);
+                else if (e.faction === "blue") gsc.blueBarracks.push(e);
+            } else if (e.type === "stables") {
+                gsc.stables.push(e);
+            }
+        }
+        
         entities.forEach(e => {
             if (e.type === "peasant" && e.state === "wander") {
                 handlePeasantWander(e, deltaTime);
@@ -12382,7 +12420,7 @@ function gameLoop(timestamp) {
             needed -= premiumConsumed;
             if (premiumConsumed > 0) {
                 resources.gold += premiumConsumed * 1;
-                const keep = entities.find(e => e.type === "keep" && e.faction === "red" && e.state !== "dead");
+                const keep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null);
                 if (keep) {
                     spawnFloatingText("+" + premiumConsumed + " Gold", keep.x, keep.y + 4.0, keep.z, 0xffd700);
                 }
@@ -12392,7 +12430,7 @@ function gameLoop(timestamp) {
             if (brewConsumed > 0) {
                 resources.brew -= brewConsumed;
                 resources.gold += brewConsumed * 4;
-                const keep = entities.find(e => e.type === "keep" && e.faction === "red" && e.state !== "dead");
+                const keep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null);
                 if (keep) {
                     spawnFloatingText("+" + (brewConsumed * 4) + " Gold (Brew)", keep.x, keep.y + 4.5, keep.z, 0xffd700);
                 }
@@ -12401,7 +12439,7 @@ function gameLoop(timestamp) {
             if (furnConsumed > 0) {
                 resources.furniture -= furnConsumed;
                 resources.gold += furnConsumed * 7;
-                const keep = entities.find(e => e.type === "keep" && e.faction === "red" && e.state !== "dead");
+                const keep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null);
                 if (keep) {
                     spawnFloatingText("+" + (furnConsumed * 7) + " Gold (Furn)", keep.x, keep.y + 5.0, keep.z, 0xffd700);
                 }
@@ -12410,7 +12448,7 @@ function gameLoop(timestamp) {
             if (gemConsumed > 0) {
                 resources.gem -= gemConsumed;
                 resources.gold += gemConsumed * 121;
-                const keep = entities.find(e => e.type === "keep" && e.faction === "red" && e.state !== "dead");
+                const keep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null);
                 if (keep) {
                     spawnFloatingText("+" + (gemConsumed * 121) + " Gold (Gem)", keep.x, keep.y + 5.5, keep.z, 0x00ffff);
                 }
@@ -12634,7 +12672,7 @@ function gameLoop(timestamp) {
         }
     }
     // Spy Disguise Mechanic
-    const activeUnits = entities.filter(e => e.type === "soldier" || e.type === "peasant" || e.type === "king" || (e.type && e.type.startsWith("siege_")));
+    const activeUnits = window.__activeUnits;
     entities.forEach(unit => {
         if (unit.weapon === "Spy" && unit.state !== "dead") {
             if (unit.disguiseTimer > 0) {
@@ -12728,7 +12766,6 @@ function gameLoop(timestamp) {
                         if (isMaskPart || c.name.startsWith("assassin")) {
                             c.material.opacity = isMaskPart ? maskOpacity : bodyOpacity;
                             c.material.transparent = true;
-                            c.material.needsUpdate = true;
                         }
                     }
                 });
@@ -12950,7 +12987,7 @@ function triggerDeath(victim, killer) {
                 e.workerBuilding = null;
                 if (e.payloadAmount > 0) {
                     e.state = "returning_payload";
-                    const keep = entities.find(k => k.type === "keep" && k.faction === e.faction && k.state !== "dead" && !k.isPlanned);
+                    const keep = (window.__gameStateCache ? (e.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                     if (keep) {
                         e.targetBuilding = keep;
                         e.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
