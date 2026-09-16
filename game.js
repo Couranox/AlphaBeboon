@@ -4141,6 +4141,9 @@ function hasLineOfSight(p1, p2, unit) {
     return true;
 }
 function hasMeleeLineOfSight(p1, p2) {
+    if (p1 && p2 && p1.y !== undefined && p2.y !== undefined) {
+        if (Math.abs(p2.y - p1.y) > 2.0) return false;
+    }
     const dist = Math.hypot(p2.x - p1.x, p2.z - p1.z);
     const steps = Math.max(1, Math.ceil(dist * 5));
     let lastY = p1.y;
@@ -7020,6 +7023,11 @@ function handleCombat(deltaTime, combatants) {
                                 const distSq = dx*dx + dy*dy + dz*dz;
                                 if (enemy.weapon === "Assassin" && distSq > 225.0) continue;
                                 const isRanged = (wStats.type === "bow" || wStats.type === "crossbow" || wStats.type === "catapult");
+                                if (!isRanged && Math.abs(dy) > 2.5 && unit.weapon !== "Assassin") {
+                                    const uIdx = Math.max(0, Math.min(89999, Math.round(unit.z + 150) * 300 + Math.round(unit.x + 150)));
+                                    const eIdx = Math.max(0, Math.min(89999, Math.round(enemy.z + 150) * 300 + Math.round(enemy.x + 150)));
+                                    if (typeof regionGrid !== "undefined" && regionGrid[uIdx] !== regionGrid[eIdx]) continue;
+                                }
                                 const exactHeightAdv = isRanged ? Math.max(0, unit.y - enemy.y) : 0;
                                 const exactSeekLimit = Math.max(15.0, wStats.range + unit.radius + 1.0) + exactHeightAdv;
                                 if (distSq < bestDistSq && distSq <= exactSeekLimit * exactSeekLimit) {
@@ -7062,6 +7070,14 @@ function handleCombat(deltaTime, combatants) {
                 // Melee units watching distant enemies periodically drop target to allow re-evaluating closer threats
                 target = null;
                 unit.targetEntity = null;
+            } else if (!isRanged && unit.state === "attacking" && !unit.isExplicitAttack && Math.abs(target.y - unit.y) > 2.5) {
+                const horizDist = Math.hypot(target.x - unit.x, target.z - unit.z);
+                if (horizDist < 3.0 && (!unit.path || unit.path.length === 0)) {
+                    target = null;
+                    unit.targetEntity = null;
+                    unit.state = (unit.type === "peasant") ? "wander" : (unit.savedHelpTarget ? "help" : "idle");
+                    if (unit.state === "help") unit.helpTarget = unit.savedHelpTarget;
+                }
             }
         }
         if (target && unit.state !== "attacking") {
@@ -7149,11 +7165,13 @@ function handleCombat(deltaTime, combatants) {
                     dealDamage(unit, target, wStats.dmg);
                     spawnSlashEffect(target.x, target.y + target.height * 0.5, target.z);
                     if (unit.weapon === "Doppelsoldner") {
-                        const hits = getEntitiesInSplashRadius(unit.x, unit.z, 2.0);
+                        const hits = getEntitiesInSplashRadius(unit.x, unit.z, 2.0, unit.y, 1.8);
                         hits.forEach(hit => {
                             if (hit.ent !== target && hit.ent.faction !== unit.faction && hit.ent.state !== "dead" && !["tree","gold","iron","stone"].includes(hit.ent.type)) {
-                                dealDamage(unit, hit.ent, 17);
-                                spawnSlashEffect(hit.ent.x, hit.ent.y + hit.ent.height * 0.5, hit.ent.z);
+                                if (hasMeleeLineOfSight(unit, hit.ent)) {
+                                    dealDamage(unit, hit.ent, 17);
+                                    spawnSlashEffect(hit.ent.x, hit.ent.y + hit.ent.height * 0.5, hit.ent.z);
+                                }
                             }
                         });
                     }
@@ -7237,7 +7255,11 @@ function calculateInterception(attackerPos, targetPos, targetVelocity, projectil
     t = Math.min(t, 4.0); // clamp lookahead offset
     const finalX = targetPos.x + vx * t;
     const finalZ = targetPos.z + vz * t;
-    return new THREE.Vector3(finalX, getFloorHeight({y: 10000}, finalX, finalZ).y, finalZ);
+    const terrainY = getTerrainHeight(finalX, finalZ);
+    const finalY = (targetPos.y !== undefined && targetPos.y > terrainY + 1.0)
+        ? targetPos.y
+        : getFloorHeight({y: 10000}, finalX, finalZ).y;
+    return new THREE.Vector3(finalX, finalY, finalZ);
 }
 // --- PROJECTILE SYSTEMS ---
 const PROJ_POOL = [];
@@ -7327,7 +7349,10 @@ function spawnProjectile(attacker, target, damage) {
     }
     let aimX = isCatapult ? (target.x || target.x === 0 ? target.x : interception.x) : interception.x;
     let aimZ = isCatapult ? (target.z || target.z === 0 ? target.z : interception.z) : interception.z;
-    let aimY = getFloorHeight({y: 10000}, aimX, aimZ).y + (target.height || 1.0) * 0.6;
+    const targetIsElevated = (target && target.y !== undefined && target.y > getTerrainHeight(aimX, aimZ) + 1.0);
+    let aimY = (targetIsElevated && !isCatapult) 
+        ? (target.y + (target.height || 1.0) * 0.6) 
+        : (getFloorHeight({y: 10000}, aimX, aimZ).y + (target.height || 1.0) * 0.6);
     let isMiss = false;
     if (Math.random() < missChance) {
         isMiss = true;
@@ -7344,7 +7369,11 @@ function spawnProjectile(attacker, target, damage) {
             aimX = startX + dirX * maxRangeWorld;
             aimZ = startZ + dirZ * maxRangeWorld;
         }
-        aimY = getFloorHeight({y: 10000}, aimX, aimZ).y + (target.height || 1.0) * 0.6;
+        if (targetIsElevated && !isCatapult) {
+            aimY = target.y + (target.height || 1.0) * 0.6 + (Math.random() - 0.5) * Math.min(2.0, scatterDist * 0.5);
+        } else {
+            aimY = getFloorHeight({y: 10000}, aimX, aimZ).y + (target.height || 1.0) * 0.6;
+        }
     }
     // Damage drop-off: reduce damage by 1 for every 10 units of distance
     const dmgReduction = isCatapult ? 0 : Math.floor(effectiveDist / 10);
@@ -7369,7 +7398,7 @@ function spawnProjectile(attacker, target, damage) {
         arcHeight: arcHeight
     });
 }
-function getEntitiesInSplashRadius(x, z, radius) {
+function getEntitiesInSplashRadius(x, z, radius, y = null, maxDy = null) {
     const results = [];
     const cellX = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((x + 150) / SPATIAL_CELL_SIZE)));
     const cellZ = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((z + 150) / SPATIAL_CELL_SIZE)));
@@ -7385,7 +7414,12 @@ function getEntitiesInSplashRadius(x, z, radius) {
                 for(let i = 0; i < list.length; i++) {
                     const e = list[i];
                     if (e.state !== "dead" && e.type !== "tree") {
-                        const dist = Math.hypot(e.x - x, e.z - z);
+                        if (y !== null && maxDy !== null && e.y !== undefined) {
+                            if (Math.abs(e.y - y) > maxDy) continue;
+                        }
+                        const dist = (y !== null && e.y !== undefined)
+                            ? Math.hypot(e.x - x, e.y - y, e.z - z)
+                            : Math.hypot(e.x - x, e.z - z);
                         if (dist <= radius + (e.radius || 0.25)) {
                             results.push({ ent: e, dist: dist });
                         }
@@ -7517,13 +7551,16 @@ function updateProjectiles(deltaTime, activeShields) {
                     let hitEntity = null;
                     const hitboxRadius = 0.25;
                     if (p.target && !p.target.isMock && !p.target.isGroundTarget && p.target.state !== "dead") {
-                        const hitDist = Math.hypot(p.target.x - p.x, p.target.z - p.z);
-                        if (hitDist <= (p.target.radius + hitboxRadius)) {
+                        const targetMidY = (p.target.y !== undefined ? p.target.y : p.y) + (p.target.height || 1.0) * 0.5;
+                        const dy = Math.abs(targetMidY - p.y);
+                        const targetHalfH = (p.target.height || 1.0) * 0.5 + hitboxRadius + 0.3;
+                        const hitDist2D = Math.hypot(p.target.x - p.x, p.target.z - p.z);
+                        if (hitDist2D <= (p.target.radius + hitboxRadius) && dy <= targetHalfH) {
                             hitEntity = p.target;
                         }
                     }
                     if (!hitEntity) {
-                        const hits = getEntitiesInSplashRadius(p.x, p.z, hitboxRadius);
+                        const hits = getEntitiesInSplashRadius(p.x, p.z, hitboxRadius, p.y, 1.5);
                         for (let j = 0; j < hits.length; j++) {
                             const ent = hits[j].ent;
                             if (ent !== p.attacker && ent.faction && ent.faction !== p.attacker.faction) {
