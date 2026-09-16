@@ -9,7 +9,7 @@ const WEAPONS = {
     "Slinger":  { dmg: 11, cd: 1.0, range: 30.0, speedMod: 0.0, type: "bow", prepTime: 2.0, desc: "Slinger (Mercenary, 50 Gold)" },
     "Spy":      { dmg: 10, cd: 1.0, range: 0.9, speedMod: 0.0, type: "melee", hpMod: -50, desc: "Spy (Mercenary, 100 Gold) [Sabotage, Disguise]" },
     "Assassin": { dmg: 50, cd: 2.0, range: 1.28, speedMod: 0.0, type: "melee", desc: "Assassin (Mercenary, 500 Gold) [Stealth, Climbs Walls]" },
-    "Doppelsoldner": { dmg: 30, cd: 1.5, range: 1.6, speedMod: 0.0, type: "melee", desc: "Doppelsoldner (Mercenary, 1000 Gold) [AoE Attack]" },
+    "Doppelsoldner": { dmg: 34, cd: 1.5, range: 1.6, speedMod: 0.0, type: "melee", desc: "Doppelsoldner (Mercenary, 1000 Gold) [AoE Attack]" },
     "RoyalKnight": { dmg: 25, cd: 1.0, range: 1.3, speedMod: 0.0, type: "melee", desc: "Royal Knight (Mercenary, 1777 Gold)" },
     "Spear":    { dmg: 10, cd: 0.8, range: 2.1, speedMod: -0.10, type: "melee", vsCav: 2, desc: "Spear (+2.1 Range, -10% Speed)" },
     "Pike":     { dmg: 17, cd: 2.0, range: 3.1, speedMod: -0.20, type: "melee", vsCav: 3, desc: "Pike (+3.1 Range, -20% Speed)" },
@@ -46,6 +46,10 @@ const WORKER_STATES = new Set([
 const STUCK_RETAIN_STATES = new Set([
     "attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"
 ]);
+
+window.__peasantAwayStates = new Set(["constructing_delivering", "wander", "training", "siege_training", "farmer_walking_to_farm", "woodcutter_walking_to_hut", "miner_returning", "worker_returning_to_shop_with_materials", "worker_returning_to_shop", "loadhouse_peasant_delivering"]);
+window.__peasantTowardsStates = new Set(["constructing_fetching", "returning_payload", "going_home", "farmer_walking_to_keep", "woodcutter_delivering", "miner_delivering", "worker_fetching", "loadhouse_peasant_fetching"]);
+
 // Base Unit Stats
 const BASE_STATS = {
     king:    { maxHp: 500, speed: 2.0, armor: 5, radius: 0.4, height: 2.0, color: 0xffd700 }, // Gold armor King
@@ -147,7 +151,20 @@ const SIEGE_UNIT_COSTS = {
 };
 // --- GAME ENGINE STATE ---
 window.onerror = function(message, source, lineno, colno, error) {
-    document.body.innerHTML += "<h1 style='color:red;z-index:999999;position:absolute;background:black;padding:20px;'>" + message + " at line " + lineno + "</h1><pre style='color:red;z-index:999999;position:absolute;top:100px;background:black;padding:20px;'>" + (error ? error.stack : '') + "</pre>";
+    let errDiv = document.getElementById("game-error-overlay");
+    if (!errDiv) {
+        errDiv = document.createElement("div");
+        errDiv.id = "game-error-overlay";
+        errDiv.style = "position:absolute;top:0;left:0;color:red;z-index:999999;background:black;padding:20px;max-height:100vh;overflow:auto;";
+        document.body.appendChild(errDiv);
+    }
+    // Cap at 5 errors to prevent unbounded growth
+    if (errDiv.children.length < 5) {
+        errDiv.innerHTML += "<h1>" + message + " at line " + lineno + "</h1><pre>" + (error ? error.stack : '') + "</pre>";
+    } else if (errDiv.children.length === 5) {
+        errDiv.innerHTML += "<h1>Too many errors. Further errors suppressed.</h1>";
+        errDiv.appendChild(document.createElement("div")); // bump length to 6 to stop appending
+    }
 };
 let scene, camera, renderer;
 let ambientLight, directionalLight;
@@ -241,6 +258,8 @@ let hardBotWaveCount = 5;
 let pendingHardBotSpawns = 0;
 let hardBotSpawnTimer = 0;
 let hardBotAiTimer = 10.0;
+let waveReleaseQueue = [];
+let cachedWaveTargets = null;
 let globalFoodTimer = 20.0;
 let starvationTimer = 1.0;
 let globalGameTime = 0;
@@ -398,6 +417,10 @@ let zoomFactor = 1.0;
 // Placement State
 let placementMode = null; // building type key
 let placementGhost = null;
+let buildingDragStart = null;
+let buildingDragGhosts = [];
+let buildingDragLinePoints = [];
+let isBuildingDragging = false;
 let wallTargetIndicator = null;
 let enemyTargetIndicator = null;
 // Fight Move Queue State
@@ -405,6 +428,7 @@ let isFightMoveQueued = false;
 // Game state flags
 let isGameOver = false;
 let needsPathGridUpdate = false;
+let needsRegionGridUpdate = false;
 let currentCommandIndex = 0;
 let soldierTrainingQueue = { "red": [], "blue": [] };
 let siegeTrainingQueue = { "red": [], "blue": [] };
@@ -639,15 +663,14 @@ function getFloorHeight(unit, nextX, nextZ) {
     return _sharedFloorResult;
 }
 // --- INITIALIZATION ---
-setInterval(() => {
+let unreachableClearInterval = setInterval(() => {
     entities.forEach(e => {
         if (e.isUnreachable) {
             e.isUnreachable = false;
             if (e.mesh) {
                 e.mesh.traverse(c => {
                     if (c.isMesh && c.material) {
-                        if (e.isPlanned && c.material.color) c.material.color.setHex(0x00ff00);
-                        else if (e.isZzz && window.applyZzzTint) {
+                        if (e.isZzz && window.applyZzzTint) {
                             window.applyZzzTint(e, true);
                         }
                         else if (c.material.emissive && c.material.origEmissive !== undefined) {
@@ -703,6 +726,22 @@ document.getElementById("btn-resume").addEventListener("click", () => {
     window.isPaused = false;
     document.getElementById("pause-menu").style.display = "none";
 });
+document.getElementById("shadow-setting").addEventListener("change", (e) => {
+    if (!renderer) return;
+    const isEnabled = e.target.value === "on";
+    if (renderer.shadowMap.enabled !== isEnabled) {
+        renderer.shadowMap.enabled = isEnabled;
+        scene.traverse((child) => {
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(m => m.needsUpdate = true);
+                } else {
+                    child.material.needsUpdate = true;
+                }
+            }
+        });
+    }
+});
 document.getElementById("volume-slider").addEventListener("input", (e) => {
     let vol = parseFloat(e.target.value);
     window.musicVolume = vol;
@@ -740,6 +779,37 @@ document.getElementById("btn-close-pro-tips").addEventListener("click", () => {
     document.getElementById("pro-tips-menu").style.display = "none";
     document.getElementById("pause-menu").style.display = "flex";
 });
+
+function cacheBlueCastleSpawnTiles(cx, cz) {
+    const tiles = [];
+    for (let x = cx - 14; x <= cx + 14; x++) {
+        for (let z = cz - 14; z <= cz + 14; z++) {
+            const gridIdx = (z + 150) * 300 + (x + 150);
+            if (pathGrid && pathGrid[gridIdx] !== null) continue;
+            
+            let blocked = false;
+            for (let i = 0; i < entities.length; i++) {
+                const e = entities[i];
+                if (e.faction === "blue" && e.baseSpeed === 0 && e.state !== "dead") {
+                    const r = (e.radius || 1.0) + 0.8;
+                    const dx = e.x - x;
+                    const dz = e.z - z;
+                    if (dx * dx + dz * dz < r * r) {
+                        blocked = true;
+                        break;
+                    }
+                }
+            }
+            if (!blocked) {
+                tiles.push({ x, z });
+            }
+        }
+    }
+    if (tiles.length === 0) {
+        tiles.push({ x: cx + 8, z: cz });
+    }
+    window.__blueCastleSpawnTiles = tiles;
+}
 
 function buildBotCastle(cx, cz) {
     createEntity("keep", "blue", cx, cz);
@@ -856,6 +926,8 @@ function buildBotCastle(cx, cz) {
     updatePathGrid();
     updateRegionGrid();
     needsPathGridUpdate = false;
+    needsRegionGridUpdate = false;
+    cacheBlueCastleSpawnTiles(cx, cz);
     // Blue King + 10 Crossbowmen on keep
     const king = createEntity("king", "blue", cx, cz);
     king.y = getFloorHeight({y:10000}, cx, cz).y + 12; // on top of keep
@@ -962,6 +1034,7 @@ function buildHardBotCastle(cx, cz) {
             const child = createEntity("tower_tile", "blue", p.x, p.z);
             child.parentId = t.id; child.material = "stone"; child.dimX = 1; child.dimY = 13; child.dimZ = 1; child.height = 13;
             child.maxHealth = t.maxHp; child.health = t.maxHp;
+            scene.remove(child.mesh); disposeHierarchy(child.mesh); child.mesh = buildEntityMesh(child); child.mesh.position.set(child.x, child.y, child.z); scene.add(child.mesh);
             t.childTiles.push(child.id);
         });
         scene.remove(t.mesh); disposeHierarchy(t.mesh); t.mesh = buildEntityMesh(t); t.mesh.position.set(t.x, t.y, t.z); scene.add(t.mesh);
@@ -998,6 +1071,7 @@ function buildHardBotCastle(cx, cz) {
         const child = createEntity("tower_tile", "blue", p.x, p.z);
         child.parentId = kt.id; child.material = "stone"; child.dimX = 1; child.dimY = 20; child.dimZ = 1; child.height = 20;
         child.maxHealth = kt.maxHp; child.health = kt.maxHp;
+        scene.remove(child.mesh); disposeHierarchy(child.mesh); child.mesh = buildEntityMesh(child); child.mesh.position.set(child.x, child.y, child.z); scene.add(child.mesh);
         kt.childTiles.push(child.id);
     });
     scene.remove(kt.mesh); disposeHierarchy(kt.mesh); kt.mesh = buildEntityMesh(kt); kt.mesh.position.set(kt.x, kt.y, kt.z); scene.add(kt.mesh);
@@ -1053,6 +1127,8 @@ function buildHardBotCastle(cx, cz) {
     updatePathGrid();
     updateRegionGrid();
     needsPathGridUpdate = false;
+    needsRegionGridUpdate = false;
+    cacheBlueCastleSpawnTiles(cx, cz);
     
     // Blue King on 20-high central tower, troops on the keep roof
     const king = createEntity("king", "blue", cx, cz);
@@ -1405,6 +1481,7 @@ if (minimapCanvas) {
     updateUI();
     // Start Game Loop
     needsPathGridUpdate = true;
+    needsRegionGridUpdate = true;
     requestAnimationFrame(gameLoop);
 }
 // --- TERRAIN BUILDER ---
@@ -1677,6 +1754,7 @@ function createInitialBases() {
         blueKeep.mesh.rotation.y = Math.PI; // Flip door to the left side
         // Spawn blue King
         createEntity("king", "blue", blueKeepX - 5, blueKeepZ - 5);
+        cacheBlueCastleSpawnTiles(blueKeepX, blueKeepZ);
     }
     
     // Spawn 10 masked assassins on Hard Mode to attack the player's king early
@@ -1866,6 +1944,35 @@ function buildWagonMesh(hasCargo, faction) {
     }
     return group;
 }
+function revertWagonToPeasant(unit) {
+    if (!unit || !unit.isWagon) return;
+    if (unit.mesh) {
+        if (unit.selectionRing) unit.mesh.remove(unit.selectionRing);
+        scene.remove(unit.mesh);
+        disposeHierarchy(unit.mesh);
+    }
+    unit.mesh = buildEntityMesh(unit);
+    if (unit.selectionRing) unit.mesh.add(unit.selectionRing);
+    unit.mesh.position.set(unit.x, unit.y, unit.z);
+    scene.add(unit.mesh);
+    
+    if (unit.originLoadhouse && unit.originLoadhouse.state !== "dead") {
+        unit.originLoadhouse.wagonAway = false;
+        unit.originLoadhouse.firstLoadTime = 0;
+        if (unit.originLoadhouse.mesh) {
+            const wGroup = unit.originLoadhouse.mesh.getObjectByName("wagonGroup");
+            if (wGroup) wGroup.visible = true;
+        }
+    }
+    unit.isWagon = false;
+    unit.wagon = null;
+    unit.originLoadhouse = null;
+    unit.meshSwappedEmpty = false;
+    if (unit.state === "wagon_delivering") {
+        unit.state = "wander";
+    }
+    updateUI();
+}
 function createCosmeticWedge(pA, pB, pC, entity, h, mat) {
     const cp = (pB.x - pA.x) * (pC.z - pA.z) - (pB.z - pA.z) * (pC.x - pA.x);
     if (cp < 0) {
@@ -1935,23 +2042,62 @@ function updateWallNeighborsAround(pts) {
         scene.add(en.mesh);
     });
 }
+const sharedGeometries = {};
+const sharedMaterials = {};
+
+function makeMaterialUnique(c) {
+    if (c.isMesh && c.material && !c.userData.hasUniqueMaterial) {
+        c.material = c.material.clone();
+        c.userData.hasUniqueMaterial = true;
+    }
+}
+
+function getSharedGeo(type, ...args) {
+    const key = type + "_" + args.join("_");
+    if (!sharedGeometries[key]) {
+        sharedGeometries[key] = new THREE[type](...args);
+    }
+    return sharedGeometries[key];
+}
+
+function getSharedMaterial(color, options = {}) {
+    let key = color.toString();
+    if (options.roughness !== undefined) key += "_r" + options.roughness;
+    if (options.metalness !== undefined) key += "_m" + options.metalness;
+    if (options.flatShading !== undefined) key += "_f" + options.flatShading;
+    if (options.transparent !== undefined) key += "_t" + options.transparent;
+    if (options.opacity !== undefined) key += "_o" + options.opacity;
+    
+    if (!sharedMaterials[key]) {
+        sharedMaterials[key] = new THREE.MeshStandardMaterial({ color: color, ...options });
+    }
+    return sharedMaterials[key];
+}
+
 function buildEntityMesh(entity) {
     const group = new THREE.Group();
-    if (entity.type === "tower_tile") return group; // Invisible physics tile
+    if (entity.type === "tower_tile") {
+        const h = entity.height || (entity.dimY || 1);
+        const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+        const hitBox = new THREE.Mesh(getSharedGeo('BoxGeometry', 1, h, 1), hitMat);
+        hitBox.position.y = h / 2;
+        group.add(hitBox);
+        return group;
+    }
     const teamColor = entity.faction === "red" ? 0xd32f2f : 0x1976d2;
     if (entity.type === "keep") {
-        const bodyGeo = new THREE.CylinderGeometry(2.4, 2.8, 6.0, 8);
-        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x757575, roughness: 0.8, flatShading: true });
+        const bodyGeo = getSharedGeo('CylinderGeometry', 2.4, 2.8, 6.0, 8);
+        const bodyMat = getSharedMaterial(0x757575, {roughness: 0.8, flatShading: true});
         const body = new THREE.Mesh(bodyGeo, bodyMat);
         body.position.y = 3.0;
         body.castShadow = true;
         body.receiveShadow = true;
         group.add(body);
         // Battlements
-        const battMat = new THREE.MeshStandardMaterial({ color: 0x616161 });
+        const battMat = getSharedMaterial(0x616161 );
         for (let i = 0; i < 8; i++) {
             const angle = (i / 8) * Math.PI * 2;
-            const b = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), battMat);
+            const b = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.8, 0.6, 0.8), battMat);
             b.position.set(Math.cos(angle) * 2.4, 6.1, Math.sin(angle) * 2.4);
             b.rotation.y = -angle;
             b.castShadow = true;
@@ -1962,31 +2108,31 @@ function buildEntityMesh(entity) {
         doorArchGroup.position.set(2.4, 0, 0);
         doorArchGroup.rotation.y = Math.PI / 2;
         group.add(doorArchGroup);
-        const portcullisMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.5, metalness: 0.8 });
-        const portcullis = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.0, 0.1), portcullisMat);
+        const portcullisMat = getSharedMaterial(0x333333, {roughness: 0.5, metalness: 0.8});
+        const portcullis = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.4, 2.0, 0.1), portcullisMat);
         portcullis.position.set(0, 1.0, 0);
         portcullis.name = "gatehouseDoor";
         doorArchGroup.add(portcullis);
-        const archMat = new THREE.MeshStandardMaterial({ color: 0x424242, roughness: 0.8 });
-        const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.2, 0.5), archMat);
+        const archMat = getSharedMaterial(0x424242, {roughness: 0.8});
+        const p1 = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.4, 2.2, 0.5), archMat);
         p1.position.set(0.9, 1.1, 0);
         doorArchGroup.add(p1);
-        const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.2, 0.5), archMat);
+        const p2 = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.4, 2.2, 0.5), archMat);
         p2.position.set(-0.9, 1.1, 0);
         doorArchGroup.add(p2);
-        const p3 = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.5), archMat);
+        const p3 = new THREE.Mesh(getSharedGeo('BoxGeometry', 2.2, 0.5, 0.5), archMat);
         p3.position.set(0, 2.45, 0);
         doorArchGroup.add(p3);
         // Large Banner
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4.0, 4), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const pole = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.06, 0.06, 4.0, 4), getSharedMaterial(0x3e2723 ));
         pole.position.set(0, 8.0, 0);
         group.add(pole);
-        const flag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.0, 1.8), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const flag = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.05, 1.0, 1.8), getSharedMaterial(teamColor ));
         flag.position.set(0, 9.5, 0.9);
         group.add(flag);
     } else if (entity.type === "house") {
-        const cabinMat = new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.9 });
-        const cabin = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.6, 3.0), cabinMat);
+        const cabinMat = getSharedMaterial(0x8d6e63, {roughness: 0.9});
+        const cabin = new THREE.Mesh(getSharedGeo('BoxGeometry', 3.0, 1.6, 3.0), cabinMat);
         cabin.position.y = 0.8;
         cabin.castShadow = true;
         cabin.receiveShadow = true;
@@ -1998,22 +2144,22 @@ function buildEntityMesh(entity) {
         shape.lineTo(-1.6, 0);
         const roofGeo = new THREE.ExtrudeGeometry(shape, { depth: 3.2, bevelEnabled: false });
         roofGeo.center();
-        const roofMat = new THREE.MeshStandardMaterial({ color: teamColor, flatShading: true });
+        const roofMat = getSharedMaterial(teamColor, {flatShading: true});
         const roof = new THREE.Mesh(roofGeo, roofMat);
         roof.position.set(0, 2.2, 0);
         roof.castShadow = true;
         group.add(roof);
     } else if (entity.type === "barracks") {
         const matColor = entity.material === "wood" ? 0x6d4c41 : 0x9e9e9e;
-        const build = new THREE.Mesh(new THREE.BoxGeometry(4.0, 2.2, 4.0), new THREE.MeshStandardMaterial({ color: matColor }));
+        const build = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.0, 2.2, 4.0), getSharedMaterial(matColor ));
         build.position.y = 1.1;
         build.castShadow = true;
         build.receiveShadow = true;
         group.add(build);
-        const awning = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.2, 2.0), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const awning = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.2, 0.2, 2.0), getSharedMaterial(teamColor ));
         awning.position.set(0, 2.3, 1.6);
         group.add(awning);
-        const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.2, 4), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const p1 = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.1, 0.1, 2.2, 4), getSharedMaterial(0x3e2723 ));
         p1.position.set(-1.8, 1.1, 2.5);
         group.add(p1);
         const p2 = p1.clone();
@@ -2021,52 +2167,52 @@ function buildEntityMesh(entity) {
         group.add(p2);
     } else if (entity.type === "mercenary_post") {
         const matColor = 0x4a148c; // Deep purple
-        const build = new THREE.Mesh(new THREE.BoxGeometry(4.0, 2.2, 4.0), new THREE.MeshStandardMaterial({ color: matColor }));
+        const build = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.0, 2.2, 4.0), getSharedMaterial(matColor ));
         build.position.y = 1.1;
         build.castShadow = true;
         build.receiveShadow = true;
         group.add(build);
-        const roof = new THREE.Mesh(new THREE.ConeGeometry(3.2, 1.5, 4), new THREE.MeshStandardMaterial({ color: 0x212121 })); // Black roof
+        const roof = new THREE.Mesh(getSharedGeo('ConeGeometry', 3.2, 1.5, 4), getSharedMaterial(0x212121 )); // Black roof
         roof.position.set(0, 2.95, 0);
         roof.rotation.y = Math.PI / 4;
         roof.castShadow = true;
         group.add(roof);
         // Gold coin emblem on the front
-        const emblem = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.1, 16), new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }));
+        const emblem = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.4, 0.4, 0.1, 16), getSharedMaterial(0xffd700, {metalness: 0.8, roughness: 0.2}));
         emblem.position.set(0, 1.5, 2.05);
         emblem.rotation.x = Math.PI / 2;
         group.add(emblem);
     } else if (entity.type === "farm") {
         // Red/Blue crop fences, centered patch
-        const soil = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.15, 4.0), new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 0.9 }));
+        const soil = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.0, 0.15, 4.0), getSharedMaterial(0x3e2723, {roughness: 0.9}));
         soil.position.y = 0.08;
         soil.receiveShadow = true;
         group.add(soil);
         // Small scarecrow or flag
-        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.5, 4), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const post = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.04, 0.04, 1.5, 4), getSharedMaterial(0x5d4037 ));
         post.position.set(0, 0.75, 0);
         group.add(post);
-        const cropMat = new THREE.MeshStandardMaterial({ color: 0x4caf50 });
+        const cropMat = getSharedMaterial(0x4caf50 );
         for (let i = -1; i <= 1; i++) {
             for (let j = -1; j <= 1; j++) {
                 if (i === 0 && j === 0) continue;
-                const crop = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.5, 4), cropMat);
+                const crop = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.2, 0.5, 4), cropMat);
                 crop.position.set(i * 0.9, 0.35, j * 0.9);
                 group.add(crop);
             }
         }
     } else if (entity.type === "woodcutter") {
         // Wooden cabin with tree stumps
-        const cabin = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.6, 3.0), new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.95 }));
+        const cabin = new THREE.Mesh(getSharedGeo('BoxGeometry', 3.0, 1.6, 3.0), getSharedMaterial(0x8d6e63, {roughness: 0.95}));
         cabin.position.y = 0.8;
         cabin.castShadow = true;
         group.add(cabin);
-        const roof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.0, 4), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const roof = new THREE.Mesh(getSharedGeo('ConeGeometry', 2.2, 1.0, 4), getSharedMaterial(teamColor ));
         roof.position.set(0, 2.1, 0);
         roof.rotation.y = Math.PI / 4;
         group.add(roof);
         // Small wood pile decoration
-        const log = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.8, 5), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const log = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.1, 0.1, 0.8, 5), getSharedMaterial(0x5d4037 ));
         log.rotation.z = Math.PI / 2;
         log.position.set(1.5, 0.1, 1.0);
         group.add(log);
@@ -2075,53 +2221,53 @@ function buildEntityMesh(entity) {
         group.add(log2);
     } else if (entity.type === "mine") {
         // Mine shaft structure
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(4.0, 2.4, 0.3), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const frame = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.0, 2.4, 0.3), getSharedMaterial(0x3e2723 ));
         frame.position.set(0, 1.2, 1.8);
         group.add(frame);
-        const cross = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 4.0), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const cross = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.3, 0.3, 4.0), getSharedMaterial(0x3e2723 ));
         cross.position.set(0, 2.4, 0);
         group.add(cross);
         // Dark hole inside
-        const hole = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.0, 0.1), new THREE.MeshBasicMaterial({ color: 0x111111 }));
+        const hole = new THREE.Mesh(getSharedGeo('BoxGeometry', 2.6, 2.0, 0.1), new THREE.MeshBasicMaterial({ color: 0x111111 }));
         hole.position.set(0, 1.0, 1.3);
         group.add(hole);
     } else if (entity.type === "bakery") {
-        const oven = new THREE.Mesh(new THREE.BoxGeometry(3.0, 2.0, 3.0), new THREE.MeshStandardMaterial({ color: 0xe0e0e0 }));
+        const oven = new THREE.Mesh(getSharedGeo('BoxGeometry', 3.0, 2.0, 3.0), getSharedMaterial(0xe0e0e0 ));
         oven.position.y = 1.0;
         group.add(oven);
-        const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.5, 8), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const chimney = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.3, 0.3, 1.5, 8), getSharedMaterial(teamColor ));
         chimney.position.set(0.9, 2.5, -0.9);
         group.add(chimney);
-        const fire = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.8, 3.1), new THREE.MeshBasicMaterial({ color: 0xff3300 }));
+        const fire = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.5, 0.8, 3.1), new THREE.MeshBasicMaterial({ color: 0xff3300 }));
         fire.position.y = 0.5;
         group.add(fire);
-        const roof = new THREE.Mesh(new THREE.ConeGeometry(2.3, 1.0, 4), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const roof = new THREE.Mesh(getSharedGeo('ConeGeometry', 2.3, 1.0, 4), getSharedMaterial(0xffcc80 ));
         roof.position.set(0, 2.5, 0);
         roof.rotation.y = Math.PI / 4;
         group.add(roof);
     } else if (entity.type === "brewery") {
-        const base = new THREE.Mesh(new THREE.BoxGeometry(3.0, 2.0, 3.0), new THREE.MeshStandardMaterial({ color: 0xe0e0e0 }));
+        const base = new THREE.Mesh(getSharedGeo('BoxGeometry', 3.0, 2.0, 3.0), getSharedMaterial(0xe0e0e0 ));
         base.position.y = 1.0;
         group.add(base);
-        const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 2.0, 8), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const chimney = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.4, 0.4, 2.0, 8), getSharedMaterial(teamColor ));
         chimney.position.set(0, 2.8, 0);
         group.add(chimney);
-        const vat = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 1.5, 16), new THREE.MeshStandardMaterial({ color: 0x8d6e63 }));
+        const vat = new THREE.Mesh(getSharedGeo('CylinderGeometry', 1.0, 1.0, 1.5, 16), getSharedMaterial(0x8d6e63 ));
         vat.position.set(-0.2, 1.5, 0.2);
         group.add(vat);
-        const roof = new THREE.Mesh(new THREE.ConeGeometry(2.3, 1.0, 4), new THREE.MeshStandardMaterial({ color: 0x8d6e63 }));
+        const roof = new THREE.Mesh(getSharedGeo('ConeGeometry', 2.3, 1.0, 4), getSharedMaterial(0x8d6e63 ));
         roof.position.set(0, 2.5, 0);
         roof.rotation.y = Math.PI / 4;
         group.add(roof);
     } else if (entity.type === "market") {
-        const stall = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.4, 2.0), new THREE.MeshStandardMaterial({ color: 0x8d6e63 }));
+        const stall = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.0, 0.4, 2.0), getSharedMaterial(0x8d6e63 ));
         stall.position.y = 0.8;
         group.add(stall);
-        const canopy = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.1, 2.4), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const canopy = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.2, 0.1, 2.4), getSharedMaterial(teamColor ));
         canopy.position.set(0, 2.2, 0);
         canopy.rotation.x = -0.1;
         group.add(canopy);
-        const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.2, 4), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const p1 = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.08, 0.08, 2.2, 4), getSharedMaterial(0x3e2723 ));
         p1.position.set(-1.9, 1.1, -1.0);
         group.add(p1);
         const p2 = p1.clone();
@@ -2134,54 +2280,54 @@ function buildEntityMesh(entity) {
         p4.position.set(1.9, 1.1, 1.0);
         group.add(p4);
     } else if (entity.type === "stables") {
-        const barn = new THREE.Mesh(new THREE.BoxGeometry(5.0, 1.8, 2.8), new THREE.MeshStandardMaterial({ color: 0x6d4c41 }));
+        const barn = new THREE.Mesh(getSharedGeo('BoxGeometry', 5.0, 1.8, 2.8), getSharedMaterial(0x6d4c41 ));
         barn.position.y = 0.9;
         barn.castShadow = true;
         barn.receiveShadow = true;
         group.add(barn);
-        const roof = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 5.0, 3), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const roof = new THREE.Mesh(getSharedGeo('CylinderGeometry', 1.4, 1.4, 5.0, 3), getSharedMaterial(0x3e2723 ));
         roof.position.y = 2.2;
         roof.rotation.z = Math.PI / 2;
         roof.rotation.x = Math.PI / 2;
         group.add(roof);
-        const fence = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.4, 5.0), new THREE.MeshBasicMaterial({ color: 0x4e342e, wireframe: true }));
+        const fence = new THREE.Mesh(getSharedGeo('BoxGeometry', 5.0, 0.4, 5.0), new THREE.MeshBasicMaterial({ color: 0x4e342e, wireframe: true }));
         fence.position.y = 0.2;
         group.add(fence);
     } else if (entity.type === "loadhouse") {
-        const platform = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.4, 4.0), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const platform = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.0, 0.4, 4.0), getSharedMaterial(0x5d4037 ));
         platform.position.y = 0.2;
         group.add(platform);
-        const trimMat = new THREE.MeshStandardMaterial({ color: teamColor });
-        const tN = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.1, 0.1), trimMat);
+        const trimMat = getSharedMaterial(teamColor );
+        const tN = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.2, 0.1, 0.1), trimMat);
         tN.position.set(0, 0.45, -2.05);
-        const tS = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.1, 0.1), trimMat);
+        const tS = new THREE.Mesh(getSharedGeo('BoxGeometry', 4.2, 0.1, 0.1), trimMat);
         tS.position.set(0, 0.45, 2.05);
-        const tE = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 4.0), trimMat);
+        const tE = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.1, 0.1, 4.0), trimMat);
         tE.position.set(2.05, 0.45, 0);
-        const tW = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 4.0), trimMat);
+        const tW = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.1, 0.1, 4.0), trimMat);
         tW.position.set(-2.05, 0.45, 0);
         group.add(tN, tS, tE, tW);
         if (entity.hasHorse) {
             const wagonGroup = new THREE.Group();
             wagonGroup.name = "wagonGroup";
-            const wagonGeo = new THREE.BoxGeometry(2.0, 0.8, 1.2);
-            const wagon = new THREE.Mesh(wagonGeo, new THREE.MeshStandardMaterial({ color: 0x8d6e63 }));
+            const wagonGeo = getSharedGeo('BoxGeometry', 2.0, 0.8, 1.2);
+            const wagon = new THREE.Mesh(wagonGeo, getSharedMaterial(0x8d6e63 ));
             wagon.position.set(0, 0.8, -0.4);
             wagonGroup.add(wagon);
-            const horseGeo = new THREE.BoxGeometry(0.8, 1.2, 1.6);
-            const horse = new THREE.Mesh(horseGeo, new THREE.MeshStandardMaterial({ color: 0x4e342e }));
+            const horseGeo = getSharedGeo('BoxGeometry', 0.8, 1.2, 1.6);
+            const horse = new THREE.Mesh(horseGeo, getSharedMaterial(0x4e342e ));
             horse.position.set(0, 0.8, 1.2);
             wagonGroup.add(horse);
             if (entity.wagonAway) wagonGroup.visible = false;
             group.add(wagonGroup);
         } else {
-            const emptySpace = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.2, 1.0), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+            const emptySpace = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.6, 0.2, 1.0), getSharedMaterial(0x3e2723 ));
             emptySpace.position.set(0, 0.5, 0);
             group.add(emptySpace);
         }
         const cratesGroup = new THREE.Group();
-        const crateGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-        const crateMat = new THREE.MeshStandardMaterial({ color: 0xdeb887 });
+        const crateGeo = getSharedGeo('BoxGeometry', 0.6, 0.6, 0.6);
+        const crateMat = getSharedMaterial(0xdeb887 );
         const cratePositions = [
             [-1.8, 0.7, -1.8], [-1.0, 0.7, -2.0], [1.8, 0.7, -1.8], [2.0, 0.7, -1.0],
             [1.8, 0.7, 1.8], [1.0, 0.7, 2.0], [-1.8, 0.7, 1.8], [-2.0, 0.7, 1.0]
@@ -2213,12 +2359,13 @@ function buildEntityMesh(entity) {
         } else {
             baseH = (entity.isRamp && !isDamaged) ? Math.max(3.0, actualH + 2.0) : actualH;
             if (entity.isPlanned) {
-                geo = new THREE.BoxGeometry(1.05, baseH + 0.05, 1.05);
+                geo = getSharedGeo('BoxGeometry', 1.05, baseH + 0.05, 1.05);
             } else {
-                geo = new THREE.BoxGeometry(1.0, baseH, 1.0);
+                geo = getSharedGeo('BoxGeometry', 1.0, baseH, 1.0);
             }
         }
         if (entity.isRamp && !isDamaged && entity.rampDx !== undefined) {
+            geo = geo.clone();
             const pos = geo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 if (pos.getY(i) > 0) {
@@ -2237,14 +2384,14 @@ function buildEntityMesh(entity) {
             mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.4 });
         } else {
             const matColor = entity.material === "wood" ? 0x8d6e63 : 0x9e9e9e;
-            mat = new THREE.MeshStandardMaterial({ color: matColor, roughness: 0.9, flatShading: true });
+            mat = getSharedMaterial(matColor, {roughness: 0.9, flatShading: true});
         }
         const mesh = new THREE.Mesh(geo, mat);
         if (entity.isOuterWall) {
-            const crenMat = new THREE.MeshStandardMaterial({ color: entity.material === "wood" ? 0x8d6e63 : 0x9e9e9e, roughness: 0.9, flatShading: true });
+            const crenMat = getSharedMaterial(entity.material === "wood" ? 0x8d6e63 : 0x9e9e9e, {roughness: 0.9, flatShading: true});
             for (let cx = -0.3; cx <= 0.3; cx += 0.6) {
                 for (let cz = -0.3; cz <= 0.3; cz += 0.6) {
-                    const cMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), crenMat);
+                    const cMesh = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.4, 0.4, 0.4), crenMat);
                     cMesh.position.set(cx, (baseH / 2) + 0.2, cz);
                     mesh.add(cMesh);
                 }
@@ -2329,43 +2476,46 @@ function buildEntityMesh(entity) {
             meshSlope.position.y = actualH + 0.25;
             meshSlope.castShadow = !entity.isPlanned;
             group.add(meshSlope);
-            const crenTop = new THREE.BoxGeometry(0.5, 1.0, 0.5);
+            const crenTop = getSharedGeo('BoxGeometry', 0.5, 1.0, 0.5);
             const meshTop = new THREE.Mesh(crenTop, mat);
             meshTop.position.y = actualH + 0.5;
             meshTop.castShadow = !entity.isPlanned;
             group.add(meshTop);
         }
     } else if (entity.type === "tower") {
-        const matColor = entity.material === "wood" ? 0x8d6e63 : 0x9e9e9e;
-        const mat = new THREE.MeshStandardMaterial({ color: matColor, roughness: 0.9, flatShading: true });
+        let mat;
         if (entity.isPlanned) {
-            mat.color.setHex(0x00ff00);
-            mat.transparent = true;
-            mat.opacity = 0.4;
+            mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.4 });
+        } else {
+            const matColor = entity.material === "wood" ? 0x8d6e63 : 0x9e9e9e;
+            mat = getSharedMaterial(matColor, {roughness: 0.9, flatShading: true});
         }
         const visualRadius = Math.max(0.5, ((entity.dimX || (entity.radius ? entity.radius * 2 + 1 : 3)) / 2.0) - 0.15);
-        const colGeo = new THREE.CylinderGeometry(visualRadius, visualRadius, entity.height, 24);
+        const colGeo = getSharedGeo('CylinderGeometry', visualRadius, visualRadius, entity.height, 24);
         const mesh = new THREE.Mesh(colGeo, mat);
         mesh.position.set(0, entity.height / 2, 0);
         mesh.castShadow = !entity.isPlanned;
         mesh.receiveShadow = !entity.isPlanned;
+        mesh.isCosmetic = true;
         group.add(mesh);
         const rimGeo = new THREE.TorusGeometry(visualRadius - 0.1, 0.25, 8, 24);
         const rim = new THREE.Mesh(rimGeo, mat);
         rim.rotation.x = Math.PI / 2;
         rim.position.y = entity.height;
         rim.castShadow = !entity.isPlanned;
+        rim.isCosmetic = true;
         group.add(rim);
         const numCrens = Math.max(8, Math.floor(visualRadius * 4));
         for (let i = 0; i < numCrens; i++) {
             const angle = (i / numCrens) * Math.PI * 2;
             const cx = Math.cos(angle) * (visualRadius - 0.25);
             const cz = Math.sin(angle) * (visualRadius - 0.25);
-            const crenGeo = new THREE.BoxGeometry(0.5, 1.0, 0.5);
+            const crenGeo = getSharedGeo('BoxGeometry', 0.5, 1.0, 0.5);
             const meshTop = new THREE.Mesh(crenGeo, mat);
             meshTop.position.set(cx, entity.height + 0.5, cz);
             meshTop.rotation.y = -angle;
             meshTop.castShadow = !entity.isPlanned;
+            meshTop.isCosmetic = true;
             meshTop.userData.isCren = true;
             group.add(meshTop);
         }
@@ -2379,11 +2529,12 @@ function buildEntityMesh(entity) {
                         let wallAngle = Math.atan2(w.z - entity.z, w.x - entity.x);
                         let doorX = Math.cos(wallAngle) * (visualRadius - 0.2);
                         let doorZ = Math.sin(wallAngle) * (visualRadius - 0.2);
-                        const doorGeo = new THREE.BoxGeometry(1.0, 1.5, 0.5);
-                        const doorMat = new THREE.MeshStandardMaterial({ color: 0x3e2723, roughness: 1.0 });
+                        const doorGeo = getSharedGeo('BoxGeometry', 1.0, 1.5, 0.5);
+                        const doorMat = getSharedMaterial(0x3e2723, {roughness: 1.0});
                         const door = new THREE.Mesh(doorGeo, doorMat);
                         door.position.set(doorX, wRoofY - entity.y + 0.75, doorZ);
                         door.rotation.y = -wallAngle;
+                        door.isCosmetic = true;
                         group.add(door);
                     }
                 }
@@ -2395,20 +2546,20 @@ function buildEntityMesh(entity) {
         const dimZ = entity.dimZ || 1;
         if (entity.isPlanned) {
             const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.4 });
-            const mesh = new THREE.Mesh(new THREE.BoxGeometry(dimX, dimY, dimZ), mat);
+            const mesh = new THREE.Mesh(getSharedGeo('BoxGeometry', dimX, dimY, dimZ), mat);
             mesh.position.y = dimY / 2;
             group.add(mesh);
         } else {
             const matColor = entity.material === "wood" ? 0x8d6e63 : 0x757575;
-            const mat = new THREE.MeshStandardMaterial({ color: matColor, roughness: 0.8, flatShading: true });
+            const mat = getSharedMaterial(matColor, {roughness: 0.8, flatShading: true});
             // Invisible Hitbox for Raycasting (selection/clicking)
             const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
-            const hitBox = new THREE.Mesh(new THREE.BoxGeometry(dimX, dimY, dimZ), hitMat);
+            const hitBox = new THREE.Mesh(getSharedGeo('BoxGeometry', dimX, dimY, dimZ), hitMat);
             hitBox.position.y = dimY / 2;
             group.add(hitBox);
             // Top Surface
             const topThickness = 0.5;
-            const topMesh = new THREE.Mesh(new THREE.BoxGeometry(dimX, topThickness, dimZ), mat);
+            const topMesh = new THREE.Mesh(getSharedGeo('BoxGeometry', dimX, topThickness, dimZ), mat);
             topMesh.position.y = dimY - (topThickness / 2);
             topMesh.castShadow = true;
             topMesh.receiveShadow = true;
@@ -2416,7 +2567,7 @@ function buildEntityMesh(entity) {
             // 4 Corner Pillars
             const pW = 0.25;
             const pH = dimY - topThickness;
-            const pillarGeo = new THREE.BoxGeometry(pW, pH, pW);
+            const pillarGeo = getSharedGeo('BoxGeometry', pW, pH, pW);
             const offsets = [
                 [-dimX/2 + pW/2, -dimZ/2 + pW/2],
                 [ dimX/2 - pW/2, -dimZ/2 + pW/2],
@@ -2434,15 +2585,15 @@ function buildEntityMesh(entity) {
             const gateGroup = new THREE.Group();
             gateGroup.name = "gatehouseDoor";
             if (entity.isOpen) gateGroup.visible = false;
-            const ironMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.5 });
+            const ironMat = getSharedMaterial(0x333333, {metalness: 0.8, roughness: 0.5});
             // X-aligned bars
             const numBarsX = Math.max(2, Math.floor((dimX - pW*2) * 3));
             const spacingX = (dimX - pW*2) / numBarsX;
             for(let i=0; i<=numBarsX; i++) {
-                const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, pH, 0.08), ironMat);
+                const b1 = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.08, pH, 0.08), ironMat);
                 b1.position.set(-dimX/2 + pW + i*spacingX, pH/2, dimZ/2 - pW/2);
                 gateGroup.add(b1);
-                const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.08, pH, 0.08), ironMat);
+                const b2 = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.08, pH, 0.08), ironMat);
                 b2.position.set(-dimX/2 + pW + i*spacingX, pH/2, -dimZ/2 + pW/2);
                 gateGroup.add(b2);
             }
@@ -2450,16 +2601,16 @@ function buildEntityMesh(entity) {
             const numBarsZ = Math.max(2, Math.floor((dimZ - pW*2) * 3));
             const spacingZ = (dimZ - pW*2) / numBarsZ;
             for(let i=0; i<=numBarsZ; i++) {
-                const b3 = new THREE.Mesh(new THREE.BoxGeometry(0.08, pH, 0.08), ironMat);
+                const b3 = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.08, pH, 0.08), ironMat);
                 b3.position.set(dimX/2 - pW/2, pH/2, -dimZ/2 + pW + i*spacingZ);
                 gateGroup.add(b3);
-                const b4 = new THREE.Mesh(new THREE.BoxGeometry(0.08, pH, 0.08), ironMat);
+                const b4 = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.08, pH, 0.08), ironMat);
                 b4.position.set(-dimX/2 + pW/2, pH/2, -dimZ/2 + pW + i*spacingZ);
                 gateGroup.add(b4);
             }
             // Horizontal bands
             for (let y = 0.8; y < pH; y += 0.8) {
-                const hBand = new THREE.Mesh(new THREE.BoxGeometry(dimX - pW, 0.08, dimZ - pW), ironMat);
+                const hBand = new THREE.Mesh(getSharedGeo('BoxGeometry', dimX - pW, 0.08, dimZ - pW), ironMat);
                 hBand.position.y = y;
                 gateGroup.add(hBand);
             }
@@ -2467,12 +2618,12 @@ function buildEntityMesh(entity) {
         }
     } else if (["poleturner", "gruntshop", "blacksmith", "fletcher", "knightarms", "tailor", "armorer", "carpenter", "jeweler"].includes(entity.type)) {
         // Generic wood production workshop with custom decorations
-        const baseBuild = new THREE.Mesh(new THREE.BoxGeometry(3.0, 2.0, 3.0), new THREE.MeshStandardMaterial({ color: BUILDING_TYPES[entity.type].color }));
+        const baseBuild = new THREE.Mesh(getSharedGeo('BoxGeometry', 3.0, 2.0, 3.0), getSharedMaterial(BUILDING_TYPES[entity.type].color ));
         baseBuild.position.y = 1.0;
         baseBuild.castShadow = true;
         baseBuild.receiveShadow = true;
         group.add(baseBuild);
-        const roof = new THREE.Mesh(new THREE.ConeGeometry(2.3, 1.2, 4), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const roof = new THREE.Mesh(getSharedGeo('ConeGeometry', 2.3, 1.2, 4), getSharedMaterial(teamColor ));
         roof.position.set(0, 2.6, 0);
         roof.rotation.y = Math.PI/4;
         group.add(roof);
@@ -2485,7 +2636,7 @@ function buildEntityMesh(entity) {
         else if (entity.type === "tailor") { cx = 0.9; cz = 0.9; }
         else if (entity.type === "armorer") { cx = 0.9; }
         if (entity.type !== "carpenter" && entity.type !== "jeweler") {
-            const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.5), new THREE.MeshStandardMaterial({ color: BUILDING_TYPES[entity.type].color }));
+            const chimney = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.5, 1.5, 0.5), getSharedMaterial(BUILDING_TYPES[entity.type].color ));
             chimney.position.set(cx, 2.5, cz);
             group.add(chimney);
         } else {
@@ -2495,7 +2646,7 @@ function buildEntityMesh(entity) {
                 {x: 1.4, z: -1.4}, {x: -1.4, z: -1.4}
             ];
             corners.forEach(c => {
-                const lanternGeo = new THREE.BoxGeometry(0.25, 0.4, 0.25);
+                const lanternGeo = getSharedGeo('BoxGeometry', 0.25, 0.4, 0.25);
                 const lanternMat = new THREE.MeshStandardMaterial({ color: 0x333333, emissive: 0x000000 });
                 const lantern = new THREE.Mesh(lanternGeo, lanternMat);
                 lantern.position.set(c.x, 2.0, c.z);
@@ -2530,59 +2681,59 @@ function buildEntityMesh(entity) {
             ctx.fillText(emoji, 64, 72);
             const tex = new THREE.CanvasTexture(canvas);
             const signMat = new THREE.MeshStandardMaterial({ map: tex });
-            const sign = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.1), signMat);
+            const sign = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.7, 0.7, 0.1), signMat);
             sign.position.set(0, 3.8, 0);
-            const signPost = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.8, 4), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+            const signPost = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.05, 0.05, 0.8, 4), getSharedMaterial(0x3e2723 ));
             signPost.position.set(0, 3.2, 0);
             group.add(signPost);
             group.add(sign);
         }
     } else if (entity.type === "king" || (entity.type === "soldier" && entity.weapon === "RoyalKnight")) {
         const isRK = entity.weapon === "RoyalKnight";
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 1.3, 8), new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.2, metalness: 0.9 }));
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.45, 0.45, 1.3, 8), getSharedMaterial(0xffd700, {roughness: 0.2, metalness: 0.9}));
         body.position.y = 0.65;
         body.castShadow = true;
         group.add(body);
-        const sash = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.15, 8), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const sash = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.48, 0.48, 0.15, 8), getSharedMaterial(teamColor ));
         sash.position.y = 0.55;
         group.add(sash);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.3, 8, 8), getSharedMaterial(0xffcc80 ));
         head.position.y = 1.45;
         group.add(head);
         if (isRK) {
-            const helm = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.4, 8), new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.2, metalness: 0.9 }));
+            const helm = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.32, 0.32, 0.4, 8), getSharedMaterial(0xffd700, {roughness: 0.2, metalness: 0.9}));
             helm.position.y = 1.6;
             group.add(helm);
             
-            const plume = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.5, 5), new THREE.MeshStandardMaterial({ color: teamColor }));
+            const plume = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.12, 0.5, 5), getSharedMaterial(teamColor ));
             plume.position.set(0, 1.85, -0.08);
             plume.rotation.x = -0.4;
             group.add(plume);
         } else {
             const crownGroup = new THREE.Group();
             crownGroup.position.set(0, 1.7, 0);
-            const crownBase = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.12, 8), new THREE.MeshStandardMaterial({ color: 0xffd700 }));
+            const crownBase = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.24, 0.24, 0.12, 8), getSharedMaterial(0xffd700 ));
             crownGroup.add(crownBase);
             for (let i = 0; i < 5; i++) {
                 const angle = (i / 5) * Math.PI * 2;
-                const spike = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.2, 4), new THREE.MeshStandardMaterial({ color: 0xffd700 }));
+                const spike = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.06, 0.2, 4), getSharedMaterial(0xffd700 ));
                 spike.position.set(Math.cos(angle) * 0.22, 0.14, Math.sin(angle) * 0.22);
                 crownGroup.add(spike);
             }
             group.add(crownGroup);
         }
-        const cape = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.08), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const cape = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.8, 1.2, 0.08), getSharedMaterial(teamColor ));
         cape.position.set(0, 0.7, -0.45);
         cape.rotation.x = 0.12;
         group.add(cape);
         
         if (entity.hasHorse) {
-            const horseGeo = new THREE.BoxGeometry(0.8, 1.2, 1.8);
-            const horseMat = new THREE.MeshStandardMaterial({ color: 0x4e342e });
+            const horseGeo = getSharedGeo('BoxGeometry', 0.8, 1.2, 1.8);
+            const horseMat = getSharedMaterial(0x4e342e );
             const horseBody = new THREE.Mesh(horseGeo, horseMat);
             horseBody.position.set(0, 0.6, 0);
             group.add(horseBody);
-            const horseHeadGeo = new THREE.BoxGeometry(0.4, 0.5, 0.6);
+            const horseHeadGeo = getSharedGeo('BoxGeometry', 0.4, 0.5, 0.6);
             const horseHead = new THREE.Mesh(horseHeadGeo, horseMat);
             horseHead.position.set(0, 1.3, 1.0);
             group.add(horseHead);
@@ -2598,18 +2749,18 @@ function buildEntityMesh(entity) {
             group.scale.set(0.9, 0.9, 0.9);
         }
     } else if (entity.type === "peasant") {
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.72, 6), new THREE.MeshStandardMaterial({ color: 0x8d6e63 }));
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.24, 0.28, 0.72, 6), getSharedMaterial(0x8d6e63 ));
         body.position.y = 0.36;
         body.castShadow = true;
         group.add(body);
-        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.08, 6), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const collar = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.25, 0.25, 0.08, 6), getSharedMaterial(teamColor ));
         collar.position.y = 0.76;
         group.add(collar);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.18, 8, 8), getSharedMaterial(0xffcc80 ));
         head.position.y = 0.96;
         group.add(head);
         // Straw hat
-        const hat = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.18, 6), new THREE.MeshStandardMaterial({ color: 0xd7ccc8 }));
+        const hat = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.38, 0.18, 6), getSharedMaterial(0xd7ccc8 ));
         hat.position.y = 1.1;
         group.add(hat);
         // Tool in hand
@@ -2617,27 +2768,27 @@ function buildEntityMesh(entity) {
         toolGroup.name = "weaponGroup";
         toolGroup.position.set(0.35, 0.4, 0.2);
         toolGroup.rotation.x = Math.PI / 6;
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.8, 4), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const shaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.02, 0.02, 0.8, 4), getSharedMaterial(0x5d4037 ));
         shaft.position.y = 0.2;
         toolGroup.add(shaft);
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.05), new THREE.MeshStandardMaterial({ color: 0xb0bec5 }));
+        const blade = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.16, 0.03, 0.05), getSharedMaterial(0xb0bec5 ));
         blade.position.set(0, 0.58, 0.06);
         toolGroup.add(blade);
         group.add(toolGroup);
     } else if (entity.type === "soldier" && entity.weapon === "Assassin") {
-        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x111111, transparent: true, opacity: 1.0 }); // All black
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 1.0, 8), bodyMat);
+        const bodyMat = getSharedMaterial(0x111111, {transparent: true, opacity: 1.0}); // All black
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.3, 0.35, 1.0, 8), bodyMat);
         body.position.y = 0.5;
         body.castShadow = true;
         body.name = "assassinBody";
         group.add(body);
-        const headMat = new THREE.MeshStandardMaterial({ color: 0x111111, transparent: true, opacity: 1.0 });
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 8, 8), headMat);
+        const headMat = getSharedMaterial(0x111111, {transparent: true, opacity: 1.0});
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.25, 8, 8), headMat);
         head.position.y = 1.15;
         head.name = "assassinHead";
         group.add(head);
         // Sash (team color)
-        const sashMat = new THREE.MeshStandardMaterial({ color: teamColor, transparent: true, opacity: 1.0 });
+        const sashMat = getSharedMaterial(teamColor, {transparent: true, opacity: 1.0});
         const sash = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.05, 8, 12), sashMat);
         sash.rotation.x = Math.PI / 4;
         sash.position.y = 0.5;
@@ -2647,34 +2798,32 @@ function buildEntityMesh(entity) {
         const maskGroup = new THREE.Group();
         maskGroup.name = "assassinMask";
         maskGroup.visible = (entity && entity.killCount > 0);
-        const maskMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-        const domeGeo = new THREE.SphereGeometry(0.18, 16, 16);
-        domeGeo.scale(1, 0.9, 0.4);
-        const dome = new THREE.Mesh(domeGeo, maskMat);
+        const maskMat = getSharedMaterial(0xffffff );
+        const dome = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.18, 16, 16), maskMat);
+        dome.scale.set(1, 0.9, 0.4);
         dome.position.set(0, 1.18, 0.22);
         maskGroup.add(dome);
-        const cheeks = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.08, 0.06), maskMat);
+        const cheeks = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.28, 0.08, 0.06), maskMat);
         cheeks.position.set(0, 1.10, 0.23);
         maskGroup.add(cheeks);
-        const socketMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
-        const eyeR = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.02, 8), socketMat);
+        const socketMat = getSharedMaterial(0x000000 );
+        const eyeR = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.045, 0.045, 0.02, 8), socketMat);
         eyeR.rotation.x = Math.PI / 2;
         eyeR.position.set(-0.06, 1.15, 0.28);
         maskGroup.add(eyeR);
-        const eyeL = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.02, 8), socketMat);
+        const eyeL = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.045, 0.045, 0.02, 8), socketMat);
         eyeL.rotation.x = Math.PI / 2;
         eyeL.position.set(0.06, 1.15, 0.28);
         maskGroup.add(eyeL);
-        const noseGeo = new THREE.ConeGeometry(0.03, 0.06, 3);
-        noseGeo.scale(1, 1, 0.25);
-        const nose = new THREE.Mesh(noseGeo, socketMat);
+        const nose = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.03, 0.06, 3), socketMat);
+        nose.scale.set(1, 1, 0.25);
         nose.position.set(0, 1.10, 0.28);
         maskGroup.add(nose);
-        const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.15, 0.05), maskMat);
+        const jaw = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.16, 0.15, 0.05), maskMat);
         jaw.position.set(0, 1.025, 0.22);
         maskGroup.add(jaw);
         for (let i = -2; i <= 2; i++) {
-            const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.12, 0.02), socketMat);
+            const tooth = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.01, 0.12, 0.02), socketMat);
             tooth.position.set(i * 0.03, 1.01, 0.24);
             maskGroup.add(tooth);
         }
@@ -2683,8 +2832,8 @@ function buildEntityMesh(entity) {
         toolGroup.name = "weaponGroup";
         toolGroup.position.set(0.4, 0.6, 0.2);
         toolGroup.rotation.x = Math.PI / 4;
-        const katanaMat = new THREE.MeshStandardMaterial({ color: 0x90a4ae, transparent: true, opacity: 1.0 });
-        const katana = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.8, 0.06), katanaMat);
+        const katanaMat = getSharedMaterial(0x90a4ae, {transparent: true, opacity: 1.0});
+        const katana = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.02, 0.8, 0.06), katanaMat);
         katana.position.y = 0.4;
         katana.name = "assassinKatana";
         toolGroup.add(katana);
@@ -2697,39 +2846,39 @@ function buildEntityMesh(entity) {
             else shirtColor = 0xffffff; // Fake red for enemy
         }
         const bodyMat = new THREE.MeshStandardMaterial({ color: shirtColor });
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.72, 6), bodyMat);
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.24, 0.28, 0.72, 6), bodyMat);
         body.position.y = 0.36;
         body.castShadow = true;
         body.name = "spyBody";
         group.add(body);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.18, 8, 8), getSharedMaterial(0xffcc80 ));
         head.position.y = 0.96;
         group.add(head);
-        const hat = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.15, 8), new THREE.MeshStandardMaterial({ color: hatColor }));
+        const hat = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.3, 0.15, 8), getSharedMaterial(hatColor ));
         hat.position.y = 1.1;
         group.add(hat);
         const toolGroup = new THREE.Group();
         toolGroup.name = "weaponGroup";
         toolGroup.position.set(0.35, 0.4, 0.2);
         toolGroup.rotation.x = Math.PI / 6;
-        const dagger = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.3, 0.05), new THREE.MeshStandardMaterial({ color: 0xb0bec5 }));
+        const dagger = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.02, 0.3, 0.05), getSharedMaterial(0xb0bec5 ));
         dagger.position.y = 0.15;
         toolGroup.add(dagger);
         group.add(toolGroup);
     } else if (entity.type === "soldier" && entity.weapon === "Grunt") {
         // Look like a peasant but with a black shirt and small black hat
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.72, 6), new THREE.MeshStandardMaterial({ color: 0x222222 })); // Black shirt
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.24, 0.28, 0.72, 6), getSharedMaterial(0x222222 )); // Black shirt
         body.position.y = 0.36;
         body.castShadow = true;
         group.add(body);
-        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.08, 6), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const collar = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.25, 0.25, 0.08, 6), getSharedMaterial(teamColor ));
         collar.position.y = 0.76;
         group.add(collar);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.18, 8, 8), getSharedMaterial(0xffcc80 ));
         head.position.y = 0.96;
         group.add(head);
         // Small black hat (smaller than peasant straw hat)
-        const hat = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.15, 6), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+        const hat = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.25, 0.15, 6), getSharedMaterial(0x222222 ));
         hat.position.y = 1.1;
         group.add(hat);
         // Tool in hand (Small Club)
@@ -2737,45 +2886,45 @@ function buildEntityMesh(entity) {
         toolGroup.name = "weaponGroup";
         toolGroup.position.set(0.35, 0.4, 0.2);
         toolGroup.rotation.x = Math.PI / 6;
-        const club = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.02, 0.6, 6), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const club = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.05, 0.02, 0.6, 6), getSharedMaterial(0x5d4037 ));
         club.position.y = 0.3;
         toolGroup.add(club);
         group.add(toolGroup);
     } else if (entity.type === "soldier" && entity.weapon === "Thug") {
         const thugGroup = new THREE.Group();
         // Look like a peasant with a black shirt and no hat. Eyepatch, scar, evil goatee.
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.30, 0.72, 6), new THREE.MeshStandardMaterial({ color: 0x222222 })); // Black shirt, slightly buff
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.25, 0.30, 0.72, 6), getSharedMaterial(0x222222 )); // Black shirt, slightly buff
         body.position.y = 0.36;
         body.castShadow = true;
         thugGroup.add(body);
         // Leather boots
-        const boots = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.2, 6), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const boots = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.31, 0.31, 0.2, 6), getSharedMaterial(0x5d4037 ));
         boots.position.y = 0.1;
         thugGroup.add(boots);
-        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.08, 6), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const collar = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.26, 0.26, 0.08, 6), getSharedMaterial(teamColor ));
         collar.position.y = 0.76;
         thugGroup.add(collar);
         const headGroup = new THREE.Group();
         headGroup.position.y = 0.96;
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.18, 8, 8), getSharedMaterial(0xffcc80 ));
         headGroup.add(head);
         // Eyepatch
-        const eyepatch = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.05), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+        const eyepatch = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.12, 0.06, 0.05), getSharedMaterial(0x111111 ));
         eyepatch.position.set(-0.06, 0.04, 0.17);
         eyepatch.rotation.z = -Math.PI / 12;
         headGroup.add(eyepatch);
-        const eyepatchStrap = new THREE.Mesh(new THREE.CylinderGeometry(0.182, 0.182, 0.012, 16), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+        const eyepatchStrap = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.182, 0.182, 0.012, 16), getSharedMaterial(0x111111 ));
         eyepatchStrap.position.set(0, 0.04, 0);
         eyepatchStrap.rotation.z = -Math.PI / 12;
         headGroup.add(eyepatchStrap);
         // Scar (vertical, underneath eyepatch)
-        const scar = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.14, 0.05), new THREE.MeshStandardMaterial({ color: 0xd32f2f }));
+        const scar = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.02, 0.14, 0.05), getSharedMaterial(0xd32f2f ));
         scar.position.set(-0.06, 0.04, 0.16);
         scar.rotation.z = 0;
         headGroup.add(scar);
         // Goatee
-        const goatee = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.12, 4), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-        goatee.position.set(0, -0.15, 0.15);
+        const goatee = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.08, 0.12, 4), getSharedMaterial(0x222222 ));
+        goatee.position.set(0, -0.10, 0.14);
         goatee.rotation.x = Math.PI / 8;
         headGroup.add(goatee);
         thugGroup.add(headGroup);
@@ -2784,10 +2933,10 @@ function buildEntityMesh(entity) {
         toolGroup.name = "weaponGroup";
         toolGroup.position.set(0.38, 0.4, 0.2);
         toolGroup.rotation.x = Math.PI / 4;
-        const club = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.02, 0.6, 6), new THREE.MeshStandardMaterial({ color: 0x4e342e }));
+        const club = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.04, 0.02, 0.6, 6), getSharedMaterial(0x4e342e ));
         club.position.y = 0.3;
         toolGroup.add(club);
-        const spikes = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.2, 0.12), new THREE.MeshStandardMaterial({ color: 0x90a4ae, metalness: 0.8 }));
+        const spikes = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.12, 0.2, 0.12), getSharedMaterial(0x90a4ae, {metalness: 0.8}));
         spikes.position.y = 0.55;
         toolGroup.add(spikes);
         thugGroup.add(toolGroup);
@@ -2795,16 +2944,16 @@ function buildEntityMesh(entity) {
         group.add(thugGroup);
     } else if (entity.type === "soldier" && entity.weapon === "Slinger") {
         // Look like a peasant with a white shirt and no hat. Has a sling.
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.28, 0.72, 6), new THREE.MeshStandardMaterial({ color: 0xffffff })); // White shirt
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.24, 0.28, 0.72, 6), getSharedMaterial(0xffffff )); // White shirt
         body.position.y = 0.36;
         body.castShadow = true;
         group.add(body);
-        const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.08, 6), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const collar = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.25, 0.25, 0.08, 6), getSharedMaterial(teamColor ));
         collar.position.y = 0.76;
         group.add(collar);
         const headGroup = new THREE.Group();
         headGroup.position.y = 0.96;
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.18, 8, 8), getSharedMaterial(0xffcc80 ));
         headGroup.add(head);
         group.add(headGroup);
         // Tool in hand (Sling)
@@ -2812,18 +2961,18 @@ function buildEntityMesh(entity) {
         toolGroup.name = "weaponGroup";
         toolGroup.position.set(0.35, 0.5, 0.0);
         // Sling strings (V shape)
-        const string1 = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.4, 4), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const string1 = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.01, 0.01, 0.4, 4), getSharedMaterial(0x5d4037 ));
         string1.position.y = 0.2;
         string1.position.x = 0.05;
         string1.rotation.z = Math.PI / 8;
         toolGroup.add(string1);
-        const string2 = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.4, 4), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const string2 = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.01, 0.01, 0.4, 4), getSharedMaterial(0x5d4037 ));
         string2.position.y = 0.2;
         string2.position.x = -0.05;
         string2.rotation.z = -Math.PI / 8;
         toolGroup.add(string2);
         // Pouch at the top
-        const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.02, 0.08), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const pouch = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.08, 0.02, 0.08), getSharedMaterial(0x5d4037 ));
         pouch.position.y = 0.4;
         toolGroup.add(pouch);
         group.add(toolGroup);
@@ -2838,18 +2987,18 @@ function buildEntityMesh(entity) {
         bctx.fillRect(0,0,32,32); bctx.fillRect(32,32,32,32);
         const bodyTex = new THREE.CanvasTexture(bodyCanvas);
         bodyTex.magFilter = THREE.NearestFilter;
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.9, 8), new THREE.MeshStandardMaterial({ map: bodyTex }));
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.28, 0.32, 0.9, 8), new THREE.MeshStandardMaterial({ map: bodyTex }));
         body.position.y = 0.45;
         body.castShadow = true;
         group.add(body);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.20, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.20, 8, 8), getSharedMaterial(0xffcc80 ));
         head.position.y = 1.05;
         head.castShadow = true;
         group.add(head);
-        const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.1, 8), new THREE.MeshStandardMaterial({ color: 0xffd700 }));
+        const hat = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.22, 0.22, 0.1, 8), getSharedMaterial(0xffd700 ));
         hat.position.y = 1.25;
         group.add(hat);
-        const feather = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.04), new THREE.MeshStandardMaterial({ color: entity.faction === "red" ? 0xd32f2f : 0x1976d2 }));
+        const feather = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.04, 0.3, 0.04), getSharedMaterial(entity.faction === "red" ? 0xd32f2f : 0x1976d2 ));
         feather.position.set(0.15, 1.3, 0.1);
         feather.rotation.z = -Math.PI/6;
         feather.rotation.x = Math.PI/6;
@@ -2859,11 +3008,11 @@ function buildEntityMesh(entity) {
         toolGroup.name = "weaponGroup";
         toolGroup.position.set(0.42, 0.4, 0.2);
         toolGroup.rotation.x = Math.PI / 4;
-        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.02), new THREE.MeshStandardMaterial({ color: 0xcfd8dc, metalness: 0.9, roughness: 0.1 }));
+        const blade = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.06, 1.3, 0.02), getSharedMaterial(0xcfd8dc, {metalness: 0.9, roughness: 0.1}));
         blade.position.y = 0.65;
-        const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const hilt = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.015, 0.015, 0.3, 8), getSharedMaterial(0x3e2723 ));
         hilt.position.y = -0.15;
-        const crossguard = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.04, 0.04), new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8 }));
+        const crossguard = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.35, 0.04, 0.04), getSharedMaterial(0xffd700, {metalness: 0.8}));
         crossguard.position.y = 0;
         toolGroup.add(blade);
         toolGroup.add(hilt);
@@ -2872,32 +3021,32 @@ function buildEntityMesh(entity) {
     } else if (entity.type === "soldier" && entity.weapon === "Brute") {
         const bruteGroup = new THREE.Group();
         // Big hulking ugly dumb peasant. Skin color body, loincloth.
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.35, 0.72, 6), new THREE.MeshStandardMaterial({ color: 0xe0b080 })); // Skin color, very buff
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.3, 0.35, 0.72, 6), getSharedMaterial(0xe0b080 )); // Skin color, very buff
         body.position.y = 0.46; // Shifted up slightly because loincloth is at the bottom
         body.castShadow = true;
         bruteGroup.add(body);
         // Loincloth
-        const loincloth = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.2, 6), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const loincloth = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.36, 0.36, 0.2, 6), getSharedMaterial(teamColor ));
         loincloth.position.y = 0.4;
         bruteGroup.add(loincloth);
         const headGroup = new THREE.Group();
         headGroup.position.y = 1.0;
         // Large ugly head
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), new THREE.MeshStandardMaterial({ color: 0xe0b080 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.22, 8, 8), getSharedMaterial(0xe0b080 ));
         headGroup.add(head);
         // Jutting jaw
-        const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.15), new THREE.MeshStandardMaterial({ color: 0xe0b080 }));
+        const jaw = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.18, 0.12, 0.15), getSharedMaterial(0xe0b080 ));
         jaw.position.set(0, -0.1, 0.15);
         headGroup.add(jaw);
         // Heavy brow
-        const brow = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.1), new THREE.MeshStandardMaterial({ color: 0xc09060 }));
+        const brow = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.26, 0.05, 0.1), getSharedMaterial(0xc09060 ));
         brow.position.set(0, 0.06, 0.2);
         headGroup.add(brow);
         // Tiny eyes
-        const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.02, 4, 4), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+        const eyeR = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.02, 4, 4), getSharedMaterial(0x111111 ));
         eyeR.position.set(0.06, 0.02, 0.21);
         headGroup.add(eyeR);
-        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.02, 4, 4), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+        const eyeL = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.02, 4, 4), getSharedMaterial(0x111111 ));
         eyeL.position.set(-0.06, 0.02, 0.21);
         headGroup.add(eyeL);
         bruteGroup.add(headGroup);
@@ -2906,21 +3055,21 @@ function buildEntityMesh(entity) {
         toolGroup.name = "weaponGroup";
         toolGroup.position.set(0.45, 0.4, 0.2);
         toolGroup.rotation.x = Math.PI / 3;
-        const club = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.03, 0.9, 6), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const club = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.06, 0.03, 0.9, 6), getSharedMaterial(0x3e2723 ));
         club.position.y = 0.4;
         toolGroup.add(club);
         bruteGroup.add(toolGroup);
         bruteGroup.scale.set(1.5, 1.5, 1.5);
         group.add(bruteGroup);
     } else if (entity.type === "soldier") {
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.9, 8), new THREE.MeshStandardMaterial({ color: 0x78909c, metalness: 0.6 }));
+        const body = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.28, 0.32, 0.9, 8), getSharedMaterial(0x78909c, {metalness: 0.6}));
         body.position.y = 0.45;
         body.castShadow = true;
         group.add(body);
-        const head = new THREE.Mesh(new THREE.SphereGeometry(0.20, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc80 }));
+        const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.20, 8, 8), getSharedMaterial(0xffcc80 ));
         head.position.y = 1.1;
         group.add(head);
-        const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.12, 0.26), new THREE.MeshStandardMaterial({ color: teamColor }));
+        const shoulders = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.65, 0.12, 0.26), getSharedMaterial(teamColor ));
         shoulders.position.set(0, 0.86, 0);
         group.add(shoulders);
         // Layer stack armor configurations
@@ -2929,26 +3078,26 @@ function buildEntityMesh(entity) {
         const hasChain = entity.armors.includes("chain");
         const hasPlate = entity.armors.includes("plate");
         if (hasCloth) {
-            const clothShirt = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.35, 0.65, 8), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+            const clothShirt = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.31, 0.35, 0.65, 8), getSharedMaterial(0xffffff ));
             clothShirt.position.y = 0.42;
             group.add(clothShirt);
         }
         if (hasLeather) {
-            const bootMat = new THREE.MeshStandardMaterial({ color: 0x5d4037 });
-            const leatherBoots = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.33, 0.4, 8), bootMat);
+            const bootMat = getSharedMaterial(0x5d4037 );
+            const leatherBoots = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.30, 0.33, 0.4, 8), bootMat);
             leatherBoots.position.y = 0.2;
             group.add(leatherBoots);
         }
         if (hasChain) {
-            const chainMail = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.36, 8), new THREE.MeshStandardMaterial({ color: 0x455a64, metalness: 0.8 }));
+            const chainMail = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.33, 0.33, 0.36, 8), getSharedMaterial(0x455a64, {metalness: 0.8}));
             chainMail.position.y = 0.65;
             group.add(chainMail);
         }
         if (hasPlate) {
-            const helm = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.26, 8), new THREE.MeshStandardMaterial({ color: 0xb0bec5, metalness: 0.9 }));
+            const helm = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.22, 0.22, 0.26, 8), getSharedMaterial(0xb0bec5, {metalness: 0.9}));
             helm.position.y = 1.25;
             group.add(helm);
-            const plume = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.32, 5), new THREE.MeshStandardMaterial({ color: teamColor }));
+            const plume = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.08, 0.32, 5), getSharedMaterial(teamColor ));
             plume.position.set(0, 1.45, -0.08);
             plume.rotation.x = -0.4;
             group.add(plume);
@@ -2960,12 +3109,12 @@ function buildEntityMesh(entity) {
             group.add(weaponMesh);
         }
         if (entity.hasHorse) {
-            const horseGeo = new THREE.BoxGeometry(0.8, 1.2, 1.8);
-            const horseMat = new THREE.MeshStandardMaterial({ color: 0x4e342e });
+            const horseGeo = getSharedGeo('BoxGeometry', 0.8, 1.2, 1.8);
+            const horseMat = getSharedMaterial(0x4e342e );
             const horseBody = new THREE.Mesh(horseGeo, horseMat);
             horseBody.position.set(0, 0.6, 0);
             group.add(horseBody);
-            const horseHeadGeo = new THREE.BoxGeometry(0.4, 0.5, 0.6);
+            const horseHeadGeo = getSharedGeo('BoxGeometry', 0.4, 0.5, 0.6);
             const horseHead = new THREE.Mesh(horseHeadGeo, horseMat);
             horseHead.position.set(0, 1.3, 1.0);
             group.add(horseHead);
@@ -2977,94 +3126,94 @@ function buildEntityMesh(entity) {
             });
         }
     } else if (entity.type === "siegeshop") {
-        const bodyGeo = new THREE.BoxGeometry(5.0, 2.5, 5.0);
-        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x5d4037 });
+        const bodyGeo = getSharedGeo('BoxGeometry', 5.0, 2.5, 5.0);
+        const bodyMat = getSharedMaterial(0x5d4037 );
         const body = new THREE.Mesh(bodyGeo, bodyMat);
         body.position.y = 1.25;
         body.castShadow = true;
         body.receiveShadow = true;
         group.add(body);
-        const roofGeo = new THREE.ConeGeometry(3.8, 1.5, 4);
-        const roofMat = new THREE.MeshStandardMaterial({ color: 0x3e2723 });
+        const roofGeo = getSharedGeo('ConeGeometry', 3.8, 1.5, 4);
+        const roofMat = getSharedMaterial(0x3e2723 );
         const roof = new THREE.Mesh(roofGeo, roofMat);
         roof.position.y = 3.25;
         roof.rotation.y = Math.PI / 4;
         roof.castShadow = true;
         group.add(roof);
-        const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0x90a4ae }));
+        const gear = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.8, 0.8, 0.2, 8), getSharedMaterial(0x90a4ae ));
         gear.position.set(2.6, 1.0, 0);
         gear.rotation.z = Math.PI / 2;
         group.add(gear);
     } else if (entity.type === "siege_shield") {
-        const shieldBody = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.0, 0.5), new THREE.MeshStandardMaterial({ color: 0x8b5a2b }));
+        const shieldBody = new THREE.Mesh(getSharedGeo('BoxGeometry', 2.0, 2.0, 0.5), getSharedMaterial(0x8b5a2b ));
         shieldBody.position.y = 1.0;
         shieldBody.castShadow = true;
         group.add(shieldBody);
-        const support = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.5, 1.0), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const support = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.2, 1.5, 1.0), getSharedMaterial(0x5d4037 ));
         support.position.set(0, 0.75, -0.6);
         support.rotation.x = -Math.PI / 6;
         group.add(support);
     } else if (entity.type === "siege_ballista") {
-        const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.4, 1.8), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const chassis = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.2, 0.4, 1.8), getSharedMaterial(0x5d4037 ));
         chassis.position.y = 0.4;
         chassis.castShadow = true;
         group.add(chassis);
-        const bow = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const bow = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.8, 0.2, 0.2), getSharedMaterial(0x3e2723 ));
         bow.name = "ballistaBow";
         bow.position.set(0, 0.8, 0.6);
         group.add(bow);
-        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 1.8), new THREE.MeshStandardMaterial({ color: 0x4e342e }));
+        const stock = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.3, 0.3, 1.8), getSharedMaterial(0x4e342e ));
         stock.position.set(0, 0.7, 0);
         group.add(stock);
         const wheels = [ [-0.7, 0.6], [0.7, 0.6], [-0.7, -0.6], [0.7, -0.6] ];
         wheels.forEach(pos => {
-            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.15, 8), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+            const w = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.3, 0.3, 0.15, 8), getSharedMaterial(0x3e2723 ));
             w.position.set(pos[0], 0.3, pos[1]);
             w.rotation.z = Math.PI / 2;
             group.add(w);
         });
     } else if (entity.type === "siege_catapult") {
-        const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 2.2), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const chassis = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.4, 0.5, 2.2), getSharedMaterial(0x5d4037 ));
         chassis.position.y = 0.5;
         chassis.castShadow = true;
         group.add(chassis);
         const armGroup = new THREE.Group();
         armGroup.name = "catapultArmGroup";
         armGroup.position.set(0, 0.8, -0.2); // pivot point
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.8, 0.2), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const arm = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.3, 1.8, 0.2), getSharedMaterial(0x3e2723 ));
         arm.position.set(0, 0.9, 0.0);
         armGroup.add(arm);
-        const bowl = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.6), new THREE.MeshStandardMaterial({ color: 0x4e342e }));
+        const bowl = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.6, 0.2, 0.6), getSharedMaterial(0x4e342e ));
         bowl.position.set(0, 1.8, 0.0);
         armGroup.add(bowl);
         armGroup.rotation.x = Math.PI / 6;
         group.add(armGroup);
         const wheels = [ [-0.8, 0.8], [0.8, 0.8], [-0.8, -0.8], [0.8, -0.8] ];
         wheels.forEach(pos => {
-            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+            const w = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.4, 0.4, 0.2, 8), getSharedMaterial(0x3e2723 ));
             w.position.set(pos[0], 0.4, pos[1]);
             w.rotation.z = Math.PI / 2;
             group.add(w);
         });
     } else if (entity.type === "siege_mangonel") {
-        const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 2.2), new THREE.MeshStandardMaterial({ color: 0x4a3219 }));
+        const chassis = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.4, 0.5, 2.2), getSharedMaterial(0x4a3219 ));
         chassis.position.y = 0.5;
         chassis.castShadow = true;
         group.add(chassis);
         const armGroup = new THREE.Group();
         armGroup.name = "catapultArmGroup";
         armGroup.position.set(0, 0.8, -0.2); // pivot point
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.8, 0.2), new THREE.MeshStandardMaterial({ color: 0x2e1a0f }));
+        const arm = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.3, 1.8, 0.2), getSharedMaterial(0x2e1a0f ));
         arm.position.set(0, 0.9, 0.0);
         armGroup.add(arm);
-        const sling = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.4), new THREE.MeshStandardMaterial({ color: 0x8b4513 }));
+        const sling = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.5, 0.05, 0.4), getSharedMaterial(0x8b4513 ));
         sling.position.set(0, 1.8, 0.2);
         armGroup.add(sling);
-        const rope1 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4), new THREE.MeshStandardMaterial({ color: 0xddccaa }));
+        const rope1 = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.02, 0.02, 0.4), getSharedMaterial(0xddccaa ));
         rope1.position.set(0.2, 1.8, 0.1);
         rope1.rotation.x = Math.PI/4;
         armGroup.add(rope1);
-        const rope2 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4), new THREE.MeshStandardMaterial({ color: 0xddccaa }));
+        const rope2 = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.02, 0.02, 0.4), getSharedMaterial(0xddccaa ));
         rope2.position.set(-0.2, 1.8, 0.1);
         rope2.rotation.x = Math.PI/4;
         armGroup.add(rope2);
@@ -3072,40 +3221,40 @@ function buildEntityMesh(entity) {
         group.add(armGroup);
         const wheels = [ [-0.8, 0.8], [0.8, 0.8], [-0.8, -0.8], [0.8, -0.8] ];
         wheels.forEach(pos => {
-            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0x2e1a0f }));
+            const w = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.4, 0.4, 0.2, 8), getSharedMaterial(0x2e1a0f ));
             w.position.set(pos[0], 0.4, pos[1]);
             w.rotation.z = Math.PI / 2;
             group.add(w);
         });
     } else if (entity.type === "siege_trebuchet") {
-        const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2.6), new THREE.MeshStandardMaterial({ color: 0x4e342e }));
+        const chassis = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.6, 0.6, 2.6), getSharedMaterial(0x4e342e ));
         chassis.position.y = 0.6;
         chassis.castShadow = true;
         group.add(chassis);
-        const frame1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.0, 0.3), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const frame1 = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.3, 3.0, 0.3), getSharedMaterial(0x3e2723 ));
         frame1.position.set(-0.6, 2.0, 0);
         group.add(frame1);
-        const frame2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.0, 0.3), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        const frame2 = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.3, 3.0, 0.3), getSharedMaterial(0x3e2723 ));
         frame2.position.set(0.6, 2.0, 0);
         group.add(frame2);
         const armGroup = new THREE.Group();
         armGroup.name = "catapultArmGroup";
         armGroup.position.set(0, 3.2, 0); // High pivot point
         // Counterweight
-        const counterweight = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 0.8), new THREE.MeshStandardMaterial({ color: 0x212121 }));
+        const counterweight = new THREE.Mesh(getSharedGeo('BoxGeometry', 1.0, 1.0, 0.8), getSharedMaterial(0x212121 ));
         counterweight.position.set(0, -0.6, 0.6);
         armGroup.add(counterweight);
-        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.5, 0.2), new THREE.MeshStandardMaterial({ color: 0x5d4037 }));
+        const arm = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.2, 3.5, 0.2), getSharedMaterial(0x5d4037 ));
         arm.position.set(0, 1.2, -0.1);
         armGroup.add(arm);
-        const sling = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.4), new THREE.MeshStandardMaterial({ color: 0x795548 }));
+        const sling = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.4, 0.1, 0.4), getSharedMaterial(0x795548 ));
         sling.position.set(0, 3.0, -0.2);
         armGroup.add(sling);
         armGroup.rotation.x = -Math.PI / 6;
         group.add(armGroup);
         const wheels = [ [-0.9, 1.0], [0.9, 1.0], [-0.9, -1.0], [0.9, -1.0] ];
         wheels.forEach(pos => {
-            const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.25, 8), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+            const w = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.5, 0.5, 0.25, 8), getSharedMaterial(0x3e2723 ));
             w.position.set(pos[0], 0.5, pos[1]);
             w.rotation.z = Math.PI / 2;
             group.add(w);
@@ -3117,12 +3266,30 @@ function buildEntityMesh(entity) {
         const d = config.dimZ !== undefined ? config.dimZ : (config.radius || 0.5) * 2;
         // Exact footprint bounding box
         const foundation = new THREE.Mesh(
-            new THREE.BoxGeometry(w - 0.1, 0.05, d - 0.1),
-            new THREE.MeshStandardMaterial({ color: 0x5a5a5a, roughness: 1.0 })
+            getSharedGeo('BoxGeometry', w - 0.1, 0.05, d - 0.1),
+            getSharedMaterial(0x5a5a5a, {roughness: 1.0})
         );
         foundation.position.y = 0.025;
         foundation.receiveShadow = true;
         group.add(foundation);
+    }
+    if (entity.type === "peasant" || entity.type === "soldier" || entity.type === "king" || entity.type === "spy" || entity.type === "assassin" || entity.weapon === "Spy" || entity.weapon === "Assassin") {
+        group.traverse(child => {
+            if (child === group) return;
+            let isDynamic = false;
+            let curr = child;
+            while (curr) {
+                if (curr.name === "weaponGroup") {
+                    isDynamic = true;
+                    break;
+                }
+                curr = curr.parent;
+            }
+            if (!isDynamic && (child.isMesh || child.isGroup)) {
+                child.updateMatrix();
+                child.matrixAutoUpdate = false;
+            }
+        });
     }
     return group;
 }
@@ -3130,95 +3297,95 @@ function buildEntityMesh(entity) {
 function buildWeaponMesh(weaponType) {
     if (!weaponType) return null;
     const wGroup = new THREE.Group();
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.9 });
-    const steelMat = new THREE.MeshStandardMaterial({ color: 0xcfd8dc, metalness: 0.85 });
+    const woodMat = getSharedMaterial(0x5d4037, {roughness: 0.9});
+    const steelMat = getSharedMaterial(0xcfd8dc, {metalness: 0.85});
     switch(weaponType) {
         case "Spear": {
-            const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.5, 5), woodMat);
+            const shaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.02, 0.02, 2.5, 5), woodMat);
             shaft.rotation.x = Math.PI / 2;
             shaft.position.z = 0.5;
             wGroup.add(shaft);
-            const head = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.4, 5), steelMat);
+            const head = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.08, 0.4, 5), steelMat);
             head.rotation.x = Math.PI / 2;
             head.position.z = 1.85;
             wGroup.add(head);
             break;
         }
         case "Pike": {
-            const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 4.2, 5), woodMat);
+            const shaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.015, 0.015, 4.2, 5), woodMat);
             shaft.rotation.x = Math.PI / 2;
             shaft.position.z = 1.3;
             wGroup.add(shaft);
-            const head = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.5, 5), steelMat);
+            const head = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.06, 0.5, 5), steelMat);
             head.rotation.x = Math.PI / 2;
             head.position.z = 3.5;
             wGroup.add(head);
             break;
         }
         case "Halberd": {
-            const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.6, 5), woodMat);
+            const shaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.025, 0.025, 2.6, 5), woodMat);
             shaft.rotation.x = Math.PI / 2;
             shaft.position.z = 0.6;
             wGroup.add(shaft);
             const headGroup = new THREE.Group();
             headGroup.position.set(0, 0, 1.8);
             headGroup.rotation.x = Math.PI / 2;
-            const tip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.4, 4), steelMat);
+            const tip = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.07, 0.4, 4), steelMat);
             tip.position.y = 0.2;
             headGroup.add(tip);
-            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.28, 0.03), steelMat);
+            const blade = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.24, 0.28, 0.03), steelMat);
             blade.position.set(0.14, 0, 0);
             headGroup.add(blade);
             wGroup.add(headGroup);
             break;
         }
         case "Poleaxe": {
-            const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 2.1, 5), woodMat);
+            const shaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.028, 0.028, 2.1, 5), woodMat);
             shaft.rotation.x = Math.PI / 2;
             shaft.position.z = 0.45;
             wGroup.add(shaft);
             const headGroup = new THREE.Group();
             headGroup.position.set(0, 0, 1.45);
             headGroup.rotation.x = Math.PI / 2;
-            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.24, 0.05), steelMat);
+            const blade = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.2, 0.24, 0.05), steelMat);
             blade.position.set(0.12, 0, 0);
             headGroup.add(blade);
-            const hammer = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.1), steelMat);
+            const hammer = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.1, 0.12, 0.1), steelMat);
             hammer.position.set(-0.08, 0, 0);
             headGroup.add(hammer);
             wGroup.add(headGroup);
             break;
         }
         case "Axe": {
-            const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 5), woodMat);
+            const shaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.03, 0.03, 1.0, 5), woodMat);
             shaft.position.y = 0.2;
             wGroup.add(shaft);
-            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.2, 0.03), steelMat);
+            const blade = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.22, 0.2, 0.03), steelMat);
             blade.position.set(0.12, 0.5, 0);
             wGroup.add(blade);
             break;
         }
         case "Sword": {
-            const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.1, 0.015), steelMat);
+            const blade = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.06, 1.1, 0.015), steelMat);
             blade.position.y = 0.55;
             wGroup.add(blade);
-            const guard = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.05, 0.04), steelMat);
+            const guard = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.24, 0.05, 0.04), steelMat);
             guard.position.y = 0.05;
             wGroup.add(guard);
-            const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.2, 5), woodMat);
+            const grip = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.025, 0.025, 0.2, 5), woodMat);
             grip.position.y = -0.08;
             wGroup.add(grip);
             break;
         }
         case "Mace": {
-            const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.0, 5), woodMat);
+            const grip = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.03, 0.03, 1.0, 5), woodMat);
             grip.position.y = 0.2;
             wGroup.add(grip);
-            const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 6), steelMat);
+            const head = new THREE.Mesh(getSharedGeo('SphereGeometry', 0.15, 6, 6), steelMat);
             head.position.y = 0.7;
             wGroup.add(head);
             for (let i = 0; i < 6; i++) {
-                const sp = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 4), steelMat);
+                const sp = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.04, 0.1, 4), steelMat);
                 const angle = (i / 6) * Math.PI * 2;
                 sp.position.set(Math.cos(angle) * 0.15, 0.7, Math.sin(angle) * 0.15);
                 sp.rotation.z = angle - Math.PI / 2;
@@ -3235,18 +3402,18 @@ function buildWeaponMesh(weaponType) {
             ]);
             const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 10, 0.024, 4, false), woodMat);
             bowGroup.add(tube);
-            const string = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 1.2, 3), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+            const string = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.005, 0.005, 1.2, 3), new THREE.MeshBasicMaterial({ color: 0xffffff }));
             string.name = "bowString";
             bowGroup.add(string);
             // Loaded arrow
             const arrowGroup = new THREE.Group();
             arrowGroup.name = "loadedArrow";
             arrowGroup.visible = false; // Hidden until winding up
-            const arrowShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.7, 4), new THREE.MeshBasicMaterial({ color: 0x4e342e }));
+            const arrowShaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.01, 0.01, 0.7, 4), new THREE.MeshBasicMaterial({ color: 0x4e342e }));
             arrowShaft.rotation.z = -Math.PI / 2; // Point along local X
             arrowShaft.position.x = 0.35;
             arrowGroup.add(arrowShaft);
-            const arrowHead = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.06, 4), new THREE.MeshBasicMaterial({ color: 0x90a4ae }));
+            const arrowHead = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.03, 0.06, 4), new THREE.MeshBasicMaterial({ color: 0x90a4ae }));
             arrowHead.rotation.z = -Math.PI / 2;
             arrowHead.position.x = 0.7;
             arrowGroup.add(arrowHead);
@@ -3264,18 +3431,18 @@ function buildWeaponMesh(weaponType) {
             ]);
             const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 12, 0.028, 4, false), woodMat);
             bowGroup.add(tube);
-            const string = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 2.0, 3), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+            const string = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.005, 0.005, 2.0, 3), new THREE.MeshBasicMaterial({ color: 0xffffff }));
             string.name = "bowString";
             bowGroup.add(string);
             // Loaded arrow
             const arrowGroup = new THREE.Group();
             arrowGroup.name = "loadedArrow";
             arrowGroup.visible = false;
-            const arrowShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.9, 4), new THREE.MeshBasicMaterial({ color: 0x4e342e }));
+            const arrowShaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.012, 0.012, 0.9, 4), new THREE.MeshBasicMaterial({ color: 0x4e342e }));
             arrowShaft.rotation.z = -Math.PI / 2;
             arrowShaft.position.x = 0.45;
             arrowGroup.add(arrowShaft);
-            const arrowHead = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.08, 4), new THREE.MeshBasicMaterial({ color: 0x90a4ae }));
+            const arrowHead = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.035, 0.08, 4), new THREE.MeshBasicMaterial({ color: 0x90a4ae }));
             arrowHead.rotation.z = -Math.PI / 2;
             arrowHead.position.x = 0.9;
             arrowGroup.add(arrowHead);
@@ -3285,24 +3452,24 @@ function buildWeaponMesh(weaponType) {
         }
         case "Crossbow": {
             const cbGroup = new THREE.Group();
-            const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.8), woodMat);
+            const stock = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.06, 0.06, 0.8), woodMat);
             stock.position.z = 0.1;
             cbGroup.add(stock);
-            const arms = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.03, 0.04), woodMat);
+            const arms = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.7, 0.03, 0.04), woodMat);
             arms.position.z = 0.42;
             cbGroup.add(arms);
-            const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.1, 0.04), steelMat);
+            const trigger = new THREE.Mesh(getSharedGeo('BoxGeometry', 0.015, 0.1, 0.04), steelMat);
             trigger.position.set(0, -0.06, -0.1);
             cbGroup.add(trigger);
             // Loaded bolt
             const boltGroup = new THREE.Group();
             boltGroup.name = "loadedBolt";
             boltGroup.visible = false;
-            const boltShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.5, 4), new THREE.MeshBasicMaterial({ color: 0x4e342e }));
+            const boltShaft = new THREE.Mesh(getSharedGeo('CylinderGeometry', 0.008, 0.008, 0.5, 4), new THREE.MeshBasicMaterial({ color: 0x4e342e }));
             boltShaft.rotation.x = Math.PI / 2;
             boltShaft.position.set(0, 0.04, 0.2);
             boltGroup.add(boltShaft);
-            const boltHead = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.05, 4), new THREE.MeshBasicMaterial({ color: 0x90a4ae }));
+            const boltHead = new THREE.Mesh(getSharedGeo('ConeGeometry', 0.02, 0.05, 4), new THREE.MeshBasicMaterial({ color: 0x90a4ae }));
             boltHead.rotation.x = Math.PI / 2;
             boltHead.position.set(0, 0.04, 0.45);
             boltGroup.add(boltHead);
@@ -3315,7 +3482,7 @@ function buildWeaponMesh(weaponType) {
 }
 // --- CONVERT PEASANT TO SOLDIER MESH ---
 function updateUnitToSoldierMesh(entity) {
-    if (entity.mesh) scene.remove(entity.mesh);
+    if (entity.mesh) { scene.remove(entity.mesh); disposeHierarchy(entity.mesh); }
     entity.mesh = buildEntityMesh(entity);
     entity.mesh.position.set(entity.x, entity.y, entity.z);
     scene.add(entity.mesh);
@@ -3357,6 +3524,10 @@ const clearanceGrid = new Uint8Array(90000);
 const rampGrid = new Uint8Array(90000);
 const regionGrid = new Uint16Array(90000);
 const keepRegions = new Set();
+const redKeepIntegrationField = new Uint16Array(90000);
+const redKeepFlowfieldX = new Float32Array(90000);
+const redKeepFlowfieldZ = new Float32Array(90000);
+let hasRedKeepFlowfield = false;
 class BinaryHeap {
     constructor(scoreFunction) {
         this.content = [];
@@ -3564,13 +3735,162 @@ function updateRegionGrid() {
             if (rId !== 0 && rId !== 65535) keepRegions.add(rId);
         }
     });
+    updateKeepFlowfield();
+}
+
+function updateKeepFlowfield() {
+    try {
+        const redKeep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null) || 
+                        entities.find(e => e.type === "keep" && e.faction === "red" && !e.isPlanned && e.state !== "dead");
+        if (!redKeep) {
+            hasRedKeepFlowfield = false;
+            return;
+        }
+
+        redKeepIntegrationField.fill(65535);
+        redKeepFlowfieldX.fill(0);
+        redKeepFlowfieldZ.fill(0);
+
+        const queueX = [];
+        const queueZ = [];
+        const queueY = [];
+        let head = 0;
+
+        const kx = Math.max(0, Math.min(299, Math.round(redKeep.x) + 150));
+        const kz = Math.max(0, Math.min(299, Math.round(redKeep.z) + 150));
+        const ky = redKeep.y !== undefined ? redKeep.y : getTerrainHeight(redKeep.x, redKeep.z);
+
+        // Seed perimeter cells of player's Keep as distance 0
+        for (let ox = -4; ox <= 4; ox++) {
+            for (let oz = -4; oz <= 4; oz++) {
+                const gx = kx + ox;
+                const gz = kz + oz;
+                if (gx < 0 || gx >= 300 || gz < 0 || gz >= 300) continue;
+                const dCenter = Math.hypot(ox, oz);
+                if (dCenter >= 2.0 && dCenter <= 4.5) {
+                    const gIdx = gz * 300 + gx;
+                    const surfs = pathGrid[gIdx];
+                    if (!surfs || (!surfs.isBuilding || surfs.isWall || surfs.isOpenGate)) {
+                        const y = surfs ? surfs[0] : getTerrainHeight(gx - 150, gz - 150);
+                        if (Math.abs(y - ky) <= 2.5) {
+                            redKeepIntegrationField[gIdx] = 0;
+                            queueX.push(gx);
+                            queueZ.push(gz);
+                            queueY.push(y);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (queueX.length === 0) {
+            const gIdx = kz * 300 + kx;
+            redKeepIntegrationField[gIdx] = 0;
+            queueX.push(kx);
+            queueZ.push(kz);
+            queueY.push(ky);
+        }
+
+        const dirs = [
+            {dx: -1, dz: 0, cost: 10}, {dx: 1, dz: 0, cost: 10}, {dx: 0, dz: -1, cost: 10}, {dx: 0, dz: 1, cost: 10},
+            {dx: -1, dz: -1, cost: 14}, {dx: 1, dz: -1, cost: 14}, {dx: -1, dz: 1, cost: 14}, {dx: 1, dz: 1, cost: 14}
+        ];
+
+        let maxIters = 95000;
+        while (head < queueX.length && --maxIters > 0) {
+            const cx = queueX[head];
+            const cz = queueZ[head];
+            const cy = queueY[head];
+            const cIdx = cz * 300 + cx;
+            const cCost = redKeepIntegrationField[cIdx];
+            head++;
+
+            for (let d = 0; d < 8; d++) {
+                const nx = cx + dirs[d].dx;
+                const nz = cz + dirs[d].dz;
+                if (nx < 0 || nx >= 300 || nz < 0 || nz >= 300) continue;
+                const nIdx = nz * 300 + nx;
+
+                const nCost = cCost + dirs[d].cost;
+                if (nCost >= redKeepIntegrationField[nIdx]) continue;
+
+                let nSurfs = pathGrid[nIdx];
+                if (nSurfs && (nSurfs.length === 0 || (nSurfs.isBuilding && !nSurfs.isWall && !nSurfs.isOpenGate))) continue;
+
+                const targetY = nSurfs ? nSurfs[0] : getTerrainHeight(nx - 150, nz - 150);
+
+                const isNextRamp = rampGrid[nIdx];
+                const isCurrRamp = rampGrid[cIdx];
+                let isValidRampDir = true;
+                if (isNextRamp && !isCurrRamp) {
+                    if (isNextRamp === 1 && Math.abs(dirs[d].dz) > 0) isValidRampDir = false;
+                    if (isNextRamp === 2 && Math.abs(dirs[d].dx) > 0) isValidRampDir = false;
+                } else if (!isNextRamp && isCurrRamp) {
+                    if (isCurrRamp === 1 && Math.abs(dirs[d].dz) > 0) isValidRampDir = false;
+                    if (isCurrRamp === 2 && Math.abs(dirs[d].dx) > 0) isValidRampDir = false;
+                }
+                if (!isValidRampDir) continue;
+
+                const effectiveMaxJump = (isCurrRamp === 1 || isCurrRamp === 2 || isNextRamp === 1 || isNextRamp === 2) ? 1.6 : 0.8;
+                if (Math.abs(targetY - cy) > effectiveMaxJump) continue;
+
+                if (dirs[d].dx !== 0 && dirs[d].dz !== 0) {
+                    const s1 = pathGrid[cz * 300 + nx];
+                    const s2 = pathGrid[nz * 300 + cx];
+                    if ((s1 && (s1.length === 0 || (s1.isBuilding && !s1.isWall && !s1.isOpenGate))) ||
+                        (s2 && (s2.length === 0 || (s2.isBuilding && !s2.isWall && !s2.isOpenGate)))) {
+                        continue;
+                    }
+                }
+
+                redKeepIntegrationField[nIdx] = nCost;
+                queueX.push(nx);
+                queueZ.push(nz);
+                queueY.push(targetY);
+            }
+        }
+
+        for (let z = 0; z < 300; z++) {
+            for (let x = 0; x < 300; x++) {
+                const idx = z * 300 + x;
+                const cCost = redKeepIntegrationField[idx];
+                if (cCost === 65535 || cCost === 0) continue;
+
+                let minCost = cCost;
+                let bestDx = 0;
+                let bestDz = 0;
+
+                for (let d = 0; d < 8; d++) {
+                    const nx = x + dirs[d].dx;
+                    const nz = z + dirs[d].dz;
+                    if (nx < 0 || nx >= 300 || nz < 0 || nz >= 300) continue;
+                    const nCost = redKeepIntegrationField[nz * 300 + nx];
+                    if (nCost < minCost) {
+                        minCost = nCost;
+                        bestDx = dirs[d].dx;
+                        bestDz = dirs[d].dz;
+                    }
+                }
+
+                if (bestDx !== 0 || bestDz !== 0) {
+                    const len = Math.hypot(bestDx, bestDz);
+                    redKeepFlowfieldX[idx] = bestDx / len;
+                    redKeepFlowfieldZ[idx] = bestDz / len;
+                }
+            }
+        }
+
+        hasRedKeepFlowfield = true;
+    } catch (err) {
+        console.error("updateKeepFlowfield error:", err);
+    }
 }
 function updatePathGrid() {
     pathGrid.fill(null);
     rampGrid.fill(0);
     const allObstacles = entities.filter(e => (e.baseSpeed === 0 && e.type !== "farm" && e.type !== "mine") || e.type === "tree" || e.type === "iron" || e.type === "stone" || e.type === "gold");
     allObstacles.forEach(e => {
-        if (e.state === "dead" || !e.mesh || !e.mesh.visible || (e.isPlanned && e.resourcesDelivered === 0)) return;
+        if (e.state === "dead" || !e.mesh || !e.mesh.visible || e.isPlanned) return;
         const hw = (e.dimX || 1) / 2;
         const hd = (e.dimZ || 1) / 2;
         if (e.type !== "wall_column" && e.type !== "gatehouse" && e.type !== "tower" && e.type !== "wall_ramp" && e.type !== "tower_tile") {
@@ -4111,11 +4431,11 @@ function findPath(unit, targetPos, targetRadius = 0) {
     const startKey = (sz + 150) * 300 + (sx + 150) + Math.floor(sy * 10) * 90000;
     nodes.set(startKey, startNode);
     openHeap.push(startNode);
-    let maxNodes = 8000;
+    let maxNodes = 15000;
     let bestNode = startNode;
     let bestH = Infinity;
     while (openHeap.size() > 0) {
-        const isBudgetExhausted = window.pathNodesEvaluatedThisFrame !== undefined && window.pathNodesEvaluatedThisFrame > 30000;
+        const isBudgetExhausted = window.pathNodesEvaluatedThisFrame !== undefined && window.pathNodesEvaluatedThisFrame > 150000;
         if (--maxNodes <= 0 || isBudgetExhausted) {
             const path = [];
             let curr = bestNode;
@@ -4329,7 +4649,7 @@ function getTerrainIntersection(mouseX, mouseY) {
     raycaster.setFromCamera(mouse, camera);
     const checkObjects = [terrainMesh];
     entities.forEach(e => {
-        if (!e.isPlanned && !e.isDead && (e.type === "wall_column" || e.type === "gatehouse" || e.type === "keep")) {
+        if (!e.isPlanned && !e.isDead && e.mesh && (e.type === "wall_column" || e.type === "gatehouse" || e.type === "keep" || e.type === "wall_ramp" || e.type === "tower_tile")) {
             checkObjects.push(e.mesh);
         }
     });
@@ -4341,13 +4661,19 @@ function getTerrainIntersection(mouseX, mouseY) {
             root = root.parent;
         }
         const hitEnt = entities.find(ent => ent.mesh === root);
-        if (hitEnt && hitEnt.type !== "tree" && hitEnt.type !== "stone" && hitEnt.type !== "iron" && hitEnt.type !== "gold") {
-            const dx = hitEnt.x - pt.x;
-            const dz = hitEnt.z - pt.z;
-            const dist = Math.hypot(dx, dz);
-            if (dist > 0) {
-                pt.x += (dx / dist) * 0.1;
-                pt.z += (dz / dist) * 0.1;
+        if (hitEnt) {
+            if (hitEnt.type === "tower_tile") {
+                pt.x = hitEnt.x;
+                pt.z = hitEnt.z;
+                pt.y = hitEnt.y + (hitEnt.height || 1.0);
+            } else if (hitEnt.type !== "tree" && hitEnt.type !== "stone" && hitEnt.type !== "iron" && hitEnt.type !== "gold") {
+                const dx = hitEnt.x - pt.x;
+                const dz = hitEnt.z - pt.z;
+                const dist = Math.hypot(dx, dz);
+                if (dist > 0) {
+                    pt.x += (dx / dist) * 0.1;
+                    pt.z += (dz / dist) * 0.1;
+                }
             }
         }
         return pt;
@@ -4435,17 +4761,120 @@ function handleSpawning(deltaTime) {
 // --- PEASANT WANDER AI ---
 function handlePeasantWander(entity, deltaTime) {
     if (entity.type !== "peasant" || entity.state !== "wander") return;
-    if (!entity.homeBuilding || entity.homeBuilding.state === "dead") return;
-    if ((entity.payloadAmount && entity.payloadAmount > 0) || entity.craftedItem) {
+    if (entity.isWagon) {
+        const wagonTotal = entity.wagon ? Object.values(entity.wagon).reduce((s, v) => s + v, 0) : 0;
+        if (wagonTotal === 0) {
+            revertWagonToPeasant(entity);
+            return;
+        }
         const keep = (window.__gameStateCache ? (entity.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
-        if (keep) {
+        let hasKeepGoods = false;
+        let hasBarracksGoods = false;
+        for (let key in entity.wagon) {
+            if (entity.wagon[key] > 0) {
+                if (["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].includes(key)) hasKeepGoods = true;
+                else hasBarracksGoods = true;
+            }
+        }
+        if (hasKeepGoods && keep) {
+            const dist = Math.hypot(entity.x - keep.x, entity.z - keep.z);
+            if (dist <= 6.0) {
+                ["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].forEach(res => {
+                    if (entity.wagon[res] > 0) {
+                        if (entity.faction === "red") resources[res] += entity.wagon[res];
+                        spawnFloatingText("+" + entity.wagon[res] + " " + res.toUpperCase(), keep.x, keep.y + 4.0, keep.z, 0xffffff);
+                        entity.wagon[res] = 0;
+                    }
+                });
+                entity.targetPosition = null;
+                entity.path = null;
+                const remTotal = Object.values(entity.wagon).reduce((s, v) => s + v, 0);
+                if (remTotal === 0) {
+                    revertWagonToPeasant(entity);
+                    return;
+                }
+            } else {
+                if (!entity.targetPosition) {
+                    const shiftDist = 5.5;
+                    const dx = entity.x - keep.x;
+                    const dz = entity.z - keep.z;
+                    const distToKeepTrue = Math.max(0.1, dist);
+                    const tx = keep.x + (dx / distToKeepTrue) * shiftDist;
+                    const tz = keep.z + (dz / distToKeepTrue) * shiftDist;
+                    entity.targetPosition = new THREE.Vector3(tx, getTerrainHeight(tx, tz), tz);
+                }
+                return;
+            }
+        }
+        if (hasBarracksGoods) {
+            const barracks = findNearestBarracks(entity.x, entity.z, entity.faction);
+            const dest = barracks || keep;
+            if (dest) {
+                const dist = Math.hypot(entity.x - dest.x, entity.z - dest.z);
+                if (dist <= 6.0) {
+                    for (let key in entity.wagon) {
+                        if (entity.wagon[key] > 0) {
+                            if (dest.inventory) dest.inventory[key] = (dest.inventory[key] || 0) + entity.wagon[key];
+                            spawnFloatingText("+" + entity.wagon[key] + " " + key, dest.x, dest.y + 3.0, dest.z, 0xffffff);
+                            entity.wagon[key] = 0;
+                        }
+                    }
+                    entity.targetPosition = null;
+                    entity.path = null;
+                    revertWagonToPeasant(entity);
+                    return;
+                } else {
+                    if (!entity.targetPosition) {
+                        entity.targetPosition = new THREE.Vector3(dest.x, getTerrainHeight(dest.x, dest.z), dest.z);
+                    }
+                    return;
+                }
+            } else {
+                revertWagonToPeasant(entity);
+                return;
+            }
+        }
+    }
+    if ((entity.payloadAmount && entity.payloadAmount > 0) || entity.craftedItem || entity.disbandGoods) {
+        const keep = (window.__gameStateCache ? (entity.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
+        if (entity.disbandGoods) {
+            const barracks = findNearestBarracks(entity.x, entity.z, entity.faction);
+            const dest = barracks || keep;
+            if (dest) {
+                const dist = Math.hypot(entity.x - dest.x, entity.z - dest.z);
+                if (dist <= 6.0) {
+                    if (dest.inventory) {
+                        if (entity.disbandGoods.weapon) dest.inventory[entity.disbandGoods.weapon] = (dest.inventory[entity.disbandGoods.weapon] || 0) + 1;
+                        if (entity.disbandGoods.armors) {
+                            entity.disbandGoods.armors.forEach(a => {
+                                dest.inventory[a] = (dest.inventory[a] || 0) + 1;
+                            });
+                        }
+                        if (entity.disbandGoods.hasHorse) {
+                            dest.inventory["horse"] = (dest.inventory["horse"] || 0) + 1;
+                        }
+                    }
+                    spawnFloatingText("Disband gear returned", dest.x, dest.y + 3.0, dest.z, 0xffffff);
+                    entity.disbandGoods = null;
+                    entity.targetPosition = null;
+                    entity.path = null;
+                } else {
+                    if (!entity.targetPosition) {
+                        entity.targetPosition = new THREE.Vector3(dest.x, getTerrainHeight(dest.x, dest.z), dest.z);
+                    }
+                    return;
+                }
+            }
+        }
+        if (keep && ((entity.payloadAmount && entity.payloadAmount > 0) || entity.craftedItem)) {
             const dx = entity.x - keep.x;
             const dz = entity.z - keep.z;
             const distToKeepTrue = Math.hypot(dx, dz);
             if (distToKeepTrue <= 6.0) {
-                if (["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].includes(entity.payloadResource)) {
-                    if (entity.faction === "red") resources[entity.payloadResource] = (resources[entity.payloadResource] || 0) + entity.payloadAmount;
-                    spawnFloatingText("+" + entity.payloadAmount + " " + (entity.payloadResource || "Wood").toUpperCase(), keep.x, keep.y + 4.0, keep.z, 0xffffff);
+                if (entity.payloadResource && ["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].includes(entity.payloadResource.toLowerCase())) {
+                    const rKey = entity.payloadResource.toLowerCase();
+                    if (entity.faction === "red") resources[rKey] = (resources[rKey] || 0) + entity.payloadAmount;
+                    spawnFloatingText("+" + entity.payloadAmount + " " + rKey.toUpperCase(), keep.x, keep.y + 4.0, keep.z, 0xffffff);
                 } else if (entity.craftedItem && entity.payloadAmount > 0) {
                     if (entity.faction === "red") {
                         const targetDrop = findNearestMilitaryDropoff(entity.x, entity.z, entity.faction) || keep;
@@ -4454,12 +4883,20 @@ function handlePeasantWander(entity, deltaTime) {
                         } else if (targetDrop.type === "loadhouse") {
                             targetDrop.storage = targetDrop.storage || {};
                             targetDrop.storage[entity.craftedItem] = (targetDrop.storage[entity.craftedItem] || 0) + entity.payloadAmount;
+                        } else if (targetDrop.type === "keep") {
+                            const cKey = entity.craftedItem.toLowerCase();
+                            if (resources[cKey] !== undefined) resources[cKey] += entity.payloadAmount;
                         }
                     }
                     spawnFloatingText("+" + entity.payloadAmount + " " + entity.craftedItem, keep.x, keep.y + 4.0, keep.z, 0xd4af37);
+                } else if (entity.payloadAmount > 0) {
+                    const rKey = (entity.payloadResource || "wood").toLowerCase();
+                    if (entity.faction === "red") resources[rKey] = (resources[rKey] || 0) + entity.payloadAmount;
+                    spawnFloatingText("+" + entity.payloadAmount + " " + rKey.toUpperCase(), keep.x, keep.y + 4.0, keep.z, 0xffffff);
                 }
                 entity.payloadAmount = 0;
                 entity.payloadResource = null;
+                entity.craftedItem = null;
                 entity.targetPosition = null;
                 entity.path = null;
             } else {
@@ -4474,6 +4911,7 @@ function handlePeasantWander(entity, deltaTime) {
             }
         }
     }
+    if (!entity.homeBuilding || entity.homeBuilding.state === "dead") return;
     entity.wanderTimer -= deltaTime;
     const distToTarget = entity.targetPosition ? Math.hypot(entity.x - entity.targetPosition.x, entity.z - entity.targetPosition.z) : 0;
     // Stop moving if arrived, OR if they've been trying to move for 1.0 seconds to prevent jitter
@@ -4540,7 +4978,7 @@ function buildCarriedMap(faction, skipUnit = null) {
         return 0;
     });
     entities.forEach(p => {
-        if (p.type === "peasant" && p.faction === faction && p !== skipUnit && (p.state === "constructing_fetching" || p.state === "constructing_delivering") && p.workerBuilding) {
+        if (p.type === "peasant" && p.faction === faction && p !== skipUnit && p.state !== "dead" && !p.isDead && (p.state === "constructing_fetching" || p.state === "constructing_delivering") && p.workerBuilding && p.workerBuilding.state !== "dead" && p.workerBuilding.isPlanned) {
             let cap = (p.payloadAmount || 0) + (p.intendedFetchAmount || 0);
             if (p.workerBuilding.type === "wall_column" || p.workerBuilding.type === "gatehouse" || p.workerBuilding.type === "wall_ramp" || p.workerBuilding.type === "tower") {
                 let startIndex = plannedWalls.indexOf(p.workerBuilding);
@@ -4651,6 +5089,13 @@ function findNextChainedWall(unit, isFetching = false, fallbackRef = null) {
                         needed -= take;
                         if (donor.payloadAmount === 0) {
                             donor.state = "constructing_fetching";
+                            if (donor.workerBuilding) {
+                                let dRemaining = (donor.workerBuilding.resourcesNeededTotal || 0) - donor.workerBuilding.resourcesDelivered;
+                                donor.intendedFetchAmount = Math.min(20, dRemaining > 0 ? dRemaining : 20);
+                                donor.payloadResource = donor.workerBuilding.material || ((donor.workerBuilding.type === "wall_column" || donor.workerBuilding.type === "gatehouse" || donor.workerBuilding.type === "wall_ramp" || donor.workerBuilding.type === "tower") ? "stone" : "wood");
+                            } else {
+                                donor.intendedFetchAmount = 20;
+                            }
                             if (keep) donor.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
                             donor.path = null;
                         }
@@ -4761,6 +5206,7 @@ function completeBuilding(b) {
     b.health = b.maxHealth;
     b.constructionProgress = 1.0;
     needsPathGridUpdate = true;
+    needsRegionGridUpdate = true;
     consumeBlueprintResources(b);
     b.isPlanned = false;
     if (b.type === "tower" && b.childTiles) {
@@ -4804,6 +5250,8 @@ function getUnitMass(u) {
                 mass = 5;
             } else if (["constructing_delivering", "woodcutter_walking_to_tree", "miner_returning", "farmer_walking_to_farm", "worker_returning_to_shop", "worker_returning_to_shop_with_materials"].includes(state)) {
                 mass = 200;
+            } else if (["training", "siege_training"].includes(state)) {
+                mass = 400; // Weighed heavily (like soldiers) so normal peasants yield to them
             } else {
                 mass = 20;
             }
@@ -4827,6 +5275,9 @@ function getUnitMass(u) {
     }
     return mass;
 }
+const __sharedLocalBuildings = new Set();
+const __BASE_OFFSETS_4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const __BASE_OFFSETS_8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, -0.7], [-0.7, 0.7], [0.7, -0.7]];
 function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
     clearUnitGrid();
     activeUnits.forEach(unit => {
@@ -4865,6 +5316,9 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 unit.isMounting = false;
                 unit.hasHorse = true;
                 if (unit.weapon === "RoyalKnight") {
+                    unit.speed = 2.0 + 1.625;
+                    unit.baseSpeed = unit.speed;
+                } else if (unit.type === "king") {
                     unit.speed = 2.0 + 1.625;
                     unit.baseSpeed = unit.speed;
                 }
@@ -4959,6 +5413,9 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         completeBuilding(b);
                     } else if (b.resourcesDelivered < b.resourcesNeededTotal) {
                         unit.state = "constructing_fetching";
+                        const remainingNeeded = (b.resourcesNeededTotal || 0) - b.resourcesDelivered;
+                        unit.intendedFetchAmount = Math.min(20, remainingNeeded);
+                        unit.payloadResource = b.material || ((b.type === "wall_column" || b.type === "gatehouse" || b.type === "wall_ramp" || b.type === "tower") ? "stone" : "wood");
                         const keep = (window.__gameStateCache ? (unit.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
                         if (keep) {
                             unit.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
@@ -4973,8 +5430,17 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                                 if (path) {
                                     unit.path = path;
                                     unit.repathTimer = 0;
+                                    unit.pathFailures = 0;
                                 } else {
                                     unit.pathCooldown = unit.pathBudgetExhausted ? 2 : 60 + Math.floor(Math.random() * 60);
+                                    unit.pathFailures = (unit.pathFailures || 0) + 1;
+                                    if (unit.pathFailures > 10) {
+                                        unit.state = "wander";
+                                        unit.workerBuilding = null;
+                                        unit.targetPosition = null;
+                                        unit.pathFailures = 0;
+                                        return;
+                                    }
                                 }
                             } else {
                                 unit.pathCooldown--;
@@ -4988,9 +5454,31 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             if (unit.targetPosition) {
                 const distToTarget = Math.hypot(unit.x - unit.targetPosition.x, unit.z - unit.targetPosition.z);
                 if (distToTarget <= 6.0) {
-                    let rType = unit.payloadResource || "wood";
-                    if (unit.payloadAmount) resources[rType] += unit.payloadAmount;
-                    unit.payloadAmount = 0;
+                    if (unit.craftedItem && unit.payloadAmount > 0) {
+                        const targetDrop = unit.targetBuilding || (unit.faction === "red" ? (findNearestMilitaryDropoff(unit.x, unit.z, unit.faction) || (window.__gameStateCache ? window.__gameStateCache.redKeep : null)) : null);
+                        if (targetDrop) {
+                            if (targetDrop.type === "barracks" && targetDrop.inventory) {
+                                targetDrop.inventory[unit.craftedItem] = (targetDrop.inventory[unit.craftedItem] || 0) + unit.payloadAmount;
+                            } else if (targetDrop.type === "loadhouse" && targetDrop.storage) {
+                                targetDrop.storage[unit.craftedItem] = (targetDrop.storage[unit.craftedItem] || 0) + unit.payloadAmount;
+                            } else {
+                                const cKey = unit.craftedItem.toLowerCase();
+                                if (unit.faction === "red" && resources[cKey] !== undefined) resources[cKey] += unit.payloadAmount;
+                            }
+                        }
+                        spawnFloatingText("+" + unit.payloadAmount + " " + unit.craftedItem, unit.x, unit.y + 3.0, unit.z, 0xd4af37);
+                        unit.craftedItem = null;
+                        unit.payloadAmount = 0;
+                        unit.payloadResource = null;
+                    } else if (unit.payloadAmount > 0) {
+                        let rType = (unit.payloadResource || "wood").toLowerCase();
+                        if (unit.faction === "red") {
+                            resources[rType] = (resources[rType] || 0) + unit.payloadAmount;
+                            spawnFloatingText("+" + unit.payloadAmount + " " + rType.toUpperCase(), unit.x, unit.y + 4.0, unit.z, 0xffffff);
+                        }
+                        unit.payloadAmount = 0;
+                        unit.payloadResource = null;
+                    }
 
                     if (unit.disbandGoods && unit.targetBuilding) {
                         const b = unit.targetBuilding;
@@ -5104,10 +5592,28 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                     pathEndsTooFar = Math.hypot(lastNode.x - unit.targetPosition.x, lastNode.z - unit.targetPosition.z) > Math.max(1.5, pathRadius + 0.5);
                 }
             }
+            const isFlowfieldActive = (unit.useFlowfield === "redKeep" && hasRedKeepFlowfield && unit.state === "fightmove" && (!unit.targetEntity || unit.targetEntity.state === "dead"));
+            let distToFlowKeep = 999;
+            if (isFlowfieldActive) {
+                const redKeep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null);
+                distToFlowKeep = redKeep ? Math.hypot(redKeep.x - unit.x, redKeep.z - unit.z) : 999;
+                if (distToFlowKeep <= 20.0) {
+                    unit.useFlowfield = null; // Drop flowfield and switch to tactical local A* near player base
+                }
+            }
+
             if (!unit.path || unit.path.length === 0 || pathEndsTooFar) {
                 let shouldFindPath = true;
                 if (unit.pathCooldown && unit.pathCooldown > 0) {
                     shouldFindPath = false;
+                }
+                if (isFlowfieldActive && distToFlowKeep > 20.0) {
+                    const fcx = Math.max(0, Math.min(299, Math.round(unit.x) + 150));
+                    const fcz = Math.max(0, Math.min(299, Math.round(unit.z) + 150));
+                    const fcIdx = fcz * 300 + fcx;
+                    if (redKeepFlowfieldX[fcIdx] !== 0 || redKeepFlowfieldZ[fcIdx] !== 0) {
+                        shouldFindPath = false; // Bypass heavy A* completely!
+                    }
                 }
                 if (shouldFindPath) {
                     unit.path = findPath(unit, unit.targetPosition, pathRadius);
@@ -5115,6 +5621,14 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                     unit.repathTimer = 0;
                     if (!unit.path) {
                         if (unit.pathBudgetExhausted) {
+                            unit.pathFailures = (unit.pathFailures || 0) + 1;
+                            if (unit.pathFailures > 10 && unit.type === "peasant" && WORKER_STATES.has(unit.state)) {
+                                unit.state = "wander";
+                                unit.workerBuilding = null;
+                                unit.targetPosition = null;
+                                unit.pathFailures = 0;
+                                return;
+                            }
                             unit.pathCooldown = 2;
                             return;
                         }
@@ -5181,31 +5695,46 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 }
             }
             let localTarget;
-            if (!unit.path || unit.path.length === 0) {
+            if (isFlowfieldActive && distToFlowKeep > 20.0 && (!unit.path || unit.path.length === 0)) {
+                const fcx = Math.max(0, Math.min(299, Math.round(unit.x) + 150));
+                const fcz = Math.max(0, Math.min(299, Math.round(unit.z) + 150));
+                const fcIdx = fcz * 300 + fcx;
+                const fx = redKeepFlowfieldX[fcIdx];
+                const fz = redKeepFlowfieldZ[fcIdx];
+                if (fx !== 0 || fz !== 0) {
+                    localTarget = { x: unit.x + fx * 2.5, z: unit.z + fz * 2.5, y: unit.y };
+                } else if (unit.targetPosition) {
+                    localTarget = unit.targetPosition;
+                } else {
+                    return;
+                }
+            } else if (!unit.path || unit.path.length === 0) {
                 if (!unit.targetPosition) return;
                 localTarget = unit.targetPosition;
             } else {
                 unit.pathFails = [];
                 // Continuous string pulling for fluid movement
-                let nextIndex = 0;
-                for (let i = 1; i < Math.min(unit.path.length, 5); i++) {
-                    let containsElevator = false;
-                    for (let j = 0; j < i; j++) {
-                        const p1 = j === 0 ? unit : unit.path[j-1];
-                        const p2 = unit.path[j];
-                        if (Math.abs(p2.y - p1.y) >= 0.5 && Math.hypot(p2.x - p1.x, p2.z - p1.z) < 0.5) {
-                            containsElevator = true;
-                            break;
+                if (unit.id % 5 === gameFrameCount % 5) {
+                    let nextIndex = 0;
+                    for (let i = 1; i < Math.min(unit.path.length, 5); i++) {
+                        let containsElevator = false;
+                        for (let j = 0; j < i; j++) {
+                            const p1 = j === 0 ? unit : unit.path[j-1];
+                            const p2 = unit.path[j];
+                            if (Math.abs(p2.y - p1.y) >= 0.5 && Math.hypot(p2.x - p1.x, p2.z - p1.z) < 0.5) {
+                                containsElevator = true;
+                                break;
+                            }
+                        }
+                        if (containsElevator) break;
+                        
+                        if (hasLineOfSight(unit, unit.path[i], unit)) {
+                            nextIndex = i;
                         }
                     }
-                    if (containsElevator) break;
-                    
-                    if (hasLineOfSight(unit, unit.path[i], unit)) {
-                        nextIndex = i;
+                    if (nextIndex > 0) {
+                        unit.path.splice(0, nextIndex);
                     }
-                }
-                if (nextIndex > 0) {
-                    unit.path.splice(0, nextIndex);
                 }
                 localTarget = unit.path[0];
             }
@@ -5346,6 +5875,11 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         unit.path = null;
                         unit.pathCooldown = 5;
                         unit.repathTimer = 0;
+                    }
+                    if (unit.stuckTimer > 2.0 && unit.useFlowfield) {
+                        unit.useFlowfield = null; // Temporary fallback to A* if stuck
+                        unit.path = null;
+                        unit.pathCooldown = 0;
                     }
                 } else {
                     unit.stuckPos.set(unit.x, unit.y, unit.z);
@@ -5724,18 +6258,16 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
         let repX = 0;
         let repZ = 0;
         const repDist = (unit.radius || 0.4) + 0.05;
-        const offsets = isIdlePeasant ?
-            [[repDist, 0], [-repDist, 0], [0, repDist], [0, -repDist]] :
-            [[repDist, 0], [-repDist, 0], [0, repDist], [0, -repDist],
-             [repDist*0.7, repDist*0.7], [-repDist*0.7, -repDist*0.7],
-             [-repDist*0.7, repDist*0.7], [repDist*0.7, -repDist*0.7]];
-        offsets.forEach(off => {
-            const sampleY = getFloorHeight(unit, unit.x + off[0], unit.z + off[1]).y;
+        const baseOffsets = isIdlePeasant ? __BASE_OFFSETS_4 : __BASE_OFFSETS_8;
+        baseOffsets.forEach(off => {
+            const ox = off[0] * repDist;
+            const oz = off[1] * repDist;
+            const sampleY = getFloorHeight(unit, unit.x + ox, unit.z + oz).y;
             const diff = sampleY - unit.y;
             if (diff > 1.0) {
                 // Steep height difference upwards (wall). Push away!
-                repX -= off[0];
-                repZ -= off[1];
+                repX -= ox;
+                repZ -= oz;
             }
         });
         if (repX !== 0 || repZ !== 0) {
@@ -5783,13 +6315,40 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                     if (distSq < minDist*minDist && Math.abs(dy) < 2.0) {
                         const dist = Math.sqrt(distSq);
                         const overlap = minDist - dist;
+                        const isPeasantVsPeasant = (uA.type === "peasant" && uB.type === "peasant" && uA.faction === uB.faction);
+                        
+                        let pushOverlap = overlap;
+                        if (isPeasantVsPeasant) {
+                            // Weak pushback for outer region allows squishing in tight spaces but expands naturally
+                            if (dist > minDist * 0.5) {
+                                pushOverlap = overlap * 0.1;
+                            } else {
+                                pushOverlap = (minDist * 0.5 - dist) + (minDist * 0.5 * 0.1); 
+                            }
+                        }
+
                         // Determine base weights
                         let baseA = getUnitMass(uA, false); // Don't use the old +0.49 seniority bonus
                         let baseB = getUnitMass(uB, false);
                         let weightA = baseA;
                         let weightB = baseB;
+                        
+                        // Peasant Traffic Flow Logic
+                        if (isPeasantVsPeasant) {
+                            const aIsAway = window.__peasantAwayStates.has(uA.state);
+                            const aIsTowards = window.__peasantTowardsStates.has(uA.state);
+                            const bIsAway = window.__peasantAwayStates.has(uB.state);
+                            const bIsTowards = window.__peasantTowardsStates.has(uB.state);
+                            
+                            if (aIsAway && bIsTowards) {
+                                weightA *= 100.0; // A flushes B out
+                            } else if (bIsAway && aIsTowards) {
+                                weightB *= 100.0; // B flushes A out
+                            }
+                        }
+
                         // Hybrid Tie-Breaker: Mass-Dominance & Seniority
-                        if (uA.state !== "idle" && uA.state !== "wander" && uA.faction === uB.faction) {
+                        if (uA.state !== "idle" && uA.state !== "wander" && uA.faction === uB.faction && weightA === baseA && weightB === baseB) {
                             const massDiff = Math.abs(baseA - baseB);
                             if (massDiff < 500) {
                                 if (baseA > baseB) {
@@ -5808,8 +6367,8 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                         const totalWeight = weightA + weightB;
                         const ratioA = weightB / totalWeight;
                         const ratioB = weightA / totalWeight;
-                        let pushX = (dist > 0 ? (dx / dist) : 1) * overlap; if (!isFinite(pushX)) pushX = 0;
-                        let pushZ = (dist > 0 ? (dz / dist) : 0) * overlap; if (!isFinite(pushZ)) pushZ = 0;
+                        let pushX = (dist > 0 ? (dx / dist) : 1) * pushOverlap; if (!isFinite(pushX)) pushX = 0;
+                        let pushZ = (dist > 0 ? (dz / dist) : 0) * pushOverlap; if (!isFinite(pushZ)) pushZ = 0;
                         // Add a tangential slide force using a time-based sine wave to break symmetry and prevent perfect deadlocks
                         // Fast, tiny sway to avoid sliding too far and "dancing"
                         const now = performance.now() * 0.012; // Faster oscillation (approx 0.5 seconds per full cycle)
@@ -5836,14 +6395,19 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                             const dot = dirAX * dirBX + dirAZ * dirBZ;
                             
                             // Head on or glancing collision
-                            if (dot < -0.2) {
-                                // Gentle nudge (20% of the overlap distance) applied sideways
-                                const rightForce = overlap * 0.2; 
-                                keepRightX_A = dirAZ * rightForce;
-                                keepRightZ_A = -dirAX * rightForce;
+                            if (dot < -0.5) {
+                                // Gentle nudge applied sideways
+                                let rightForce = overlap * 0.15; 
+                                if (isPeasantVsPeasant) {
+                                    // Noticeable but capped to prevent aggressive teleport-dancing
+                                    rightForce = Math.min(overlap * 0.35, 0.035); 
+                                }
                                 
-                                keepRightX_B = dirBZ * rightForce;
-                                keepRightZ_B = -dirBX * rightForce;
+                                keepRightX_A = -dirAZ * rightForce;
+                                keepRightZ_A = dirAX * rightForce;
+                                
+                                keepRightX_B = -dirBZ * rightForce;
+                                keepRightZ_B = dirBX * rightForce;
                             }
                         }
 
@@ -5943,7 +6507,8 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
         let inOpenGate = false;
         const uCellX = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((unit.x + 150) / SPATIAL_CELL_SIZE)));
         const uCellZ = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((unit.z + 150) / SPATIAL_CELL_SIZE)));
-        const localBuildings = new Set();
+        __sharedLocalBuildings.clear();
+        const localBuildings = __sharedLocalBuildings;
         for(let dx=-1; dx<=1; dx++) {
             for(let dz=-1; dz<=1; dz++) {
                 const cx = uCellX + dx;
@@ -6385,7 +6950,7 @@ function handleCombat(deltaTime, combatants) {
                 unit.pathCooldown = 0;
             } else if (unit.state === "attacking") {
                 if (!processNextCommand(unit)) {
-                    unit.state = unit.savedHelpTarget ? "help" : "idle";
+                    unit.state = (unit.type === "peasant") ? "wander" : (unit.savedHelpTarget ? "help" : "idle");
                     if (unit.state === "help") unit.helpTarget = unit.savedHelpTarget;
                     unit.isExplicitAttack = false;
                     unit.targetPosition = null;
@@ -6415,6 +6980,9 @@ function handleCombat(deltaTime, combatants) {
             if (unit.type === "peasant" && unit.state === "wander" && (unit.id % 10 !== gameFrameCount % 10)) {
                 return; // Throttle idle peasant combat scans to 6Hz (10 frames)
             }
+            if (unit.isWaveUnit === "building" && (unit.id % 20 !== gameFrameCount % 20)) {
+                return; // Throttle staging units waiting in courtyard to 3Hz (20 frames)
+            }
             if ((unit.weapon === "Catapult" || unit.weapon === "Trebuchet" || unit.weapon === "Mangonel") && !isFightMoving) {
                 return; // Catapult does not auto-target unless fightmoving
             }
@@ -6425,7 +6993,7 @@ function handleCombat(deltaTime, combatants) {
             const gridRange = Math.ceil(baselineSeekLimit / SPATIAL_CELL_SIZE);
             const cellX = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((unit.x + 150) / SPATIAL_CELL_SIZE)));
             const cellZ = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((unit.z + 150) / SPATIAL_CELL_SIZE)));
-            let bestDist = Infinity;
+            let bestDistSq = Infinity;
             // Helper to check a grid
             const checkGrid = (gridArr) => {
                 for (let oz = -gridRange; oz <= gridRange; oz++) {
@@ -6454,8 +7022,8 @@ function handleCombat(deltaTime, combatants) {
                                 const isRanged = (wStats.type === "bow" || wStats.type === "crossbow" || wStats.type === "catapult");
                                 const exactHeightAdv = isRanged ? Math.max(0, unit.y - enemy.y) : 0;
                                 const exactSeekLimit = Math.max(15.0, wStats.range + unit.radius + 1.0) + exactHeightAdv;
-                                if (distSq < bestDist * bestDist && distSq <= exactSeekLimit * exactSeekLimit) {
-                                    bestDist = Math.sqrt(distSq);
+                                if (distSq < bestDistSq && distSq <= exactSeekLimit * exactSeekLimit) {
+                                    bestDistSq = distSq;
                                     target = enemy;
                                 }
                             }
@@ -6487,7 +7055,7 @@ function handleCombat(deltaTime, combatants) {
                 } else if (unit.state === "attacking" && !unit.isExplicitAttack) {
                     target = null;
                     unit.targetEntity = null;
-                    unit.state = unit.savedHelpTarget ? "help" : "idle";
+                    unit.state = (unit.type === "peasant") ? "wander" : (unit.savedHelpTarget ? "help" : "idle");
                     if (unit.state === "help") unit.helpTarget = unit.savedHelpTarget;
                 }
             } else if (!isRanged && unit.state === "idle" && distToTarget > wStats.range + unit.radius + target.radius + 2.0 && (unit.id % 15 === gameFrameCount % 15)) {
@@ -6584,7 +7152,7 @@ function handleCombat(deltaTime, combatants) {
                         const hits = getEntitiesInSplashRadius(unit.x, unit.z, 2.0);
                         hits.forEach(hit => {
                             if (hit.ent !== target && hit.ent.faction !== unit.faction && hit.ent.state !== "dead" && !["tree","gold","iron","stone"].includes(hit.ent.type)) {
-                                dealDamage(unit, hit.ent, 15);
+                                dealDamage(unit, hit.ent, 17);
                                 spawnSlashEffect(hit.ent.x, hit.ent.y + hit.ent.height * 0.5, hit.ent.z);
                             }
                         });
@@ -6672,36 +7240,61 @@ function calculateInterception(attackerPos, targetPos, targetVelocity, projectil
     return new THREE.Vector3(finalX, getFloorHeight({y: 10000}, finalX, finalZ).y, finalZ);
 }
 // --- PROJECTILE SYSTEMS ---
-function spawnProjectile(attacker, target, damage) {
+const PROJ_POOL = [];
+const PROJ_GEO = {
+    Trebuchet: getSharedGeo('SphereGeometry', 0.45, 8, 8),
+    Catapult: getSharedGeo('SphereGeometry', 0.3, 8, 8),
+    Mangonel: getSharedGeo('SphereGeometry', 0.15, 8, 8),
+    Slinger: getSharedGeo('SphereGeometry', 0.1, 8, 8)
+};
+const PROJ_MAT = {
+    Rock: getSharedMaterial(0x9e9e9e ),
+    ArrowWood: new THREE.MeshBasicMaterial({ color: 0x4e342e }),
+    Feather: new THREE.MeshBasicMaterial({ color: 0xffffff })
+};
+// Initialize arrow and ballista geometries safely
+const arrGeo = getSharedGeo('CylinderGeometry', 0.01, 0.01, 0.5, 4); arrGeo.rotateX(Math.PI / 2); PROJ_GEO.Arrow = arrGeo;
+const balGeo = getSharedGeo('CylinderGeometry', 0.05, 0.05, 1.0, 4); balGeo.rotateX(Math.PI / 2); PROJ_GEO.Ballista = balGeo;
+PROJ_GEO.ArrowFeather = getSharedGeo('BoxGeometry', 0.01, 0.08, 0.12);
+PROJ_GEO.BallistaFeather = getSharedGeo('BoxGeometry', 0.05, 0.08, 0.12);
+
+function getPooledProjectile(weapon) {
+    const poolType = (weapon === "Trebuchet" || weapon === "Catapult" || weapon === "Mangonel" || weapon === "Slinger") ? weapon : 
+                     (weapon === "Ballista") ? "Ballista" : "Arrow";
+    for (let i = 0; i < PROJ_POOL.length; i++) {
+        if (PROJ_POOL[i].poolType === poolType && !PROJ_POOL[i].active) {
+            PROJ_POOL[i].active = true;
+            PROJ_POOL[i].group.visible = true;
+            return PROJ_POOL[i].group;
+        }
+    }
     const arrowGroup = new THREE.Group();
-    const isCatapult = attacker.weapon === "Catapult" || attacker.weapon === "Trebuchet" || attacker.weapon === "Mangonel";
-    if (attacker.weapon === "Catapult" || attacker.weapon === "Trebuchet") {
-        const boulderRadius = attacker.weapon === "Trebuchet" ? 0.45 : 0.3;
-        const boulder = new THREE.Mesh(new THREE.SphereGeometry(boulderRadius, 8, 8), new THREE.MeshStandardMaterial({ color: 0x9e9e9e }));
+    arrowGroup.userData.poolObj = { poolType: poolType, active: true, group: arrowGroup };
+    
+    if (poolType === "Trebuchet" || poolType === "Catapult" || poolType === "Mangonel" || poolType === "Slinger") {
+        const boulder = new THREE.Mesh(PROJ_GEO[poolType], PROJ_MAT.Rock);
         arrowGroup.add(boulder);
-    } else if (attacker.weapon === "Slinger" || attacker.weapon === "Mangonel") {
-        const rSize = attacker.weapon === "Mangonel" ? 0.15 : 0.1;
-        const rock = new THREE.Mesh(new THREE.SphereGeometry(rSize, 8, 8), new THREE.MeshStandardMaterial({ color: 0x9e9e9e }));
-        arrowGroup.add(rock);
     } else {
-        const length = attacker.weapon === "Ballista" ? 1.0 : 0.5;
-        const width = attacker.weapon === "Ballista" ? 0.05 : 0.01;
-        const arrowGeo = new THREE.CylinderGeometry(width, width, length, 4);
-        arrowGeo.rotateX(Math.PI / 2);
-        const arrowMat = new THREE.MeshBasicMaterial({ color: 0x4e342e });
-        const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+        const arrow = new THREE.Mesh(PROJ_GEO[poolType], PROJ_MAT.ArrowWood);
+        const feather = new THREE.Mesh(poolType === "Ballista" ? PROJ_GEO.BallistaFeather : PROJ_GEO.ArrowFeather, PROJ_MAT.Feather);
+        feather.position.z = poolType === "Ballista" ? -0.5 : -0.25;
         arrowGroup.add(arrow);
-        const feather = new THREE.Mesh(new THREE.BoxGeometry(width, 0.08, 0.12), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-        feather.position.z = -length/2;
         arrowGroup.add(feather);
     }
+    PROJ_POOL.push(arrowGroup.userData.poolObj);
+    scene.add(arrowGroup);
+    return arrowGroup;
+}
+
+function spawnProjectile(attacker, target, damage) {
+    const isCatapult = attacker.weapon === "Catapult" || attacker.weapon === "Trebuchet" || attacker.weapon === "Mangonel";
+    const arrowGroup = getPooledProjectile(attacker.weapon);
     const startX = attacker.x;
     let startY = attacker.y + attacker.height * 0.7;
     if (attacker.weapon === "Trebuchet") startY = attacker.y + 4.5;
     else if (attacker.weapon === "Catapult" || attacker.weapon === "Mangonel") startY = attacker.y + 2.5;
     const startZ = attacker.z;
     arrowGroup.position.set(startX, startY, startZ);
-    scene.add(arrowGroup);
     // Calculate leading point
     const v_t = getUnitVelocity(target);
     const pSpeed = 24.0;
@@ -6709,8 +7302,8 @@ function spawnProjectile(attacker, target, damage) {
     // Miss Chance (1% per distance unit)
     const dist = Math.hypot(target.x - attacker.x, target.y - attacker.y, target.z - attacker.z);
     const hasLoS = hasProjectileLoS(attacker, target);
-    let missChance = dist * (attacker.weapon === "Catapult" ? 0.02 : (attacker.weapon === "Ballista" ? 0.005 : 0.01));
-    let scatterMax = dist * (attacker.weapon === "Catapult" ? 0.20 : (attacker.weapon === "Ballista" ? 0.05 : 0.10));
+    let missChance = dist * (attacker.weapon === "Catapult" ? 0.02 : ((attacker.weapon === "Ballista" || attacker.weapon === "Crossbow") ? 0.005 : 0.01));
+    let scatterMax = dist * (attacker.weapon === "Catapult" ? 0.20 : ((attacker.weapon === "Ballista" || attacker.weapon === "Crossbow") ? 0.05 : 0.10));
     if (attacker.weapon === "Slinger") {
         missChance *= 2;
         scatterMax *= 2;
@@ -6946,9 +7539,15 @@ function updateProjectiles(deltaTime, activeShields) {
                     }
                 }
             }
-            scene.remove(p.mesh);
-            disposeHierarchy(p.mesh);
-            projectiles.splice(i, 1);
+            if (p.mesh.userData && p.mesh.userData.poolObj) {
+                p.mesh.visible = false;
+                p.mesh.userData.poolObj.active = false;
+            } else {
+                scene.remove(p.mesh);
+                disposeHierarchy(p.mesh);
+            }
+            projectiles[i] = projectiles[projectiles.length - 1];
+            projectiles.pop();
         }
     }
 }
@@ -6956,7 +7555,7 @@ function updateProjectiles(deltaTime, activeShields) {
 function processSoldierQueue(activePeasants) {
     const factions = ["red", "blue"];
     factions.forEach(faction => {
-        let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home"));
+        let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home" || p.state === "idle"));
         if (idlePeasants.length === 0) return;
         const sq = soldierTrainingQueue[faction];
         while (sq && sq.length > 0 && idlePeasants.length > 0) {
@@ -7123,6 +7722,11 @@ function convertPeasantToSiegeUnit(peasant, shop) {
                 }
                 if (e.healthBar) {
                     scene.remove(e.healthBar);
+                    if (e.healthBar.material) {
+                        if (e.healthBar.material.map) e.healthBar.material.map.dispose();
+                        e.healthBar.material.dispose();
+                    }
+                    if (e.healthTexture) e.healthTexture.dispose();
                     e.healthBar = null;
                 }
                 pilotsConverted++;
@@ -7152,7 +7756,7 @@ function convertPeasantToSiegeUnit(peasant, shop) {
 function processSiegeQueue(activePeasants) {
     const factions = ["red", "blue"];
     factions.forEach(faction => {
-        let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home"));
+        let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home" || p.state === "idle"));
         if (idlePeasants.length === 0) return;
         const sq = siegeTrainingQueue[faction];
         if (!sq || sq.length === 0) return;
@@ -7190,7 +7794,7 @@ function processSiegeQueue(activePeasants) {
 function processConstructionQueue(activePeasants, keeps, filterFn = null) {
     const factions = ["red", "blue"];
     factions.forEach(faction => {
-        let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home"));
+        let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home" || p.state === "idle"));
         if (idlePeasants.length === 0) return;
         const planned = entities.filter(e => e.faction === faction && e.isPlanned && e.state !== "dead" && !e.isUnreachable && !e.isZzz && e.type !== "tower_tile" && (!filterFn || filterFn(e)));
         if (planned.length === 0) return;
@@ -7341,13 +7945,129 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
         }
     });
     activePeasants.forEach(p => {
-        if ((p.state === "wander" || p.state === "idle") && p.payloadAmount > 0) {
+        if (p.isWagon) {
+            const wagonTotal = p.wagon ? Object.values(p.wagon).reduce((s, v) => s + v, 0) : 0;
+            if (p.state === "wander" || p.state === "idle") {
+                if (wagonTotal === 0) {
+                    revertWagonToPeasant(p);
+                } else {
+                    let hasKeepGoods = false;
+                    for (let key in p.wagon) {
+                        if (["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].includes(key) && p.wagon[key] > 0) hasKeepGoods = true;
+                    }
+                    p.state = "wagon_delivering";
+                    p.deliveryPhase = hasKeepGoods ? 0 : 1;
+                    if (p.deliveryPhase === 0) {
+                        const keep = keeps.find(k => k.faction === p.faction);
+                        if (keep) p.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
+                        else p.deliveryPhase = 1;
+                    }
+                    if (p.deliveryPhase === 1) {
+                        const barracks = findNearestBarracks(p.x, p.z, p.faction);
+                        const dest = barracks || keeps.find(k => k.faction === p.faction);
+                        if (dest) p.targetPosition = new THREE.Vector3(dest.x, getTerrainHeight(dest.x, dest.z), dest.z);
+                        else revertWagonToPeasant(p);
+                    }
+                }
+            } else if (p.state === "wagon_delivering") {
+                if (p.deliveryPhase === 0) {
+                    const keep = keeps.find(k => k.faction === p.faction);
+                    if (keep && Math.hypot(keep.x - p.x, keep.z - p.z) <= 6.0) {
+                        ["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].forEach(res => {
+                            if (p.wagon && p.wagon[res] > 0) {
+                                if (p.faction === "red") resources[res] += p.wagon[res];
+                                spawnFloatingText("+" + p.wagon[res] + " " + res.toUpperCase(), keep.x, keep.y + 4.0, keep.z, 0xffffff);
+                                p.wagon[res] = 0;
+                            }
+                        });
+                        let hasRemainingBarracks = false;
+                        if (p.wagon) {
+                            for (let k in p.wagon) {
+                                if (p.wagon[k] > 0) hasRemainingBarracks = true;
+                            }
+                        }
+                        if (hasRemainingBarracks) {
+                            p.deliveryPhase = 1;
+                            const barracks = findNearestBarracks(p.x, p.z, p.faction);
+                            const dest = barracks || keep;
+                            if (dest) p.targetPosition = new THREE.Vector3(dest.x, getTerrainHeight(dest.x, dest.z), dest.z);
+                        } else {
+                            if (!p.workerBuilding || (p.originLoadhouse && p.originLoadhouse.state === "dead")) {
+                                revertWagonToPeasant(p);
+                            } else {
+                                p.deliveryPhase = 2;
+                                p.targetPosition = new THREE.Vector3(p.workerBuilding.x, getTerrainHeight(p.workerBuilding.x, p.workerBuilding.z), p.workerBuilding.z);
+                            }
+                        }
+                    }
+                } else if (p.deliveryPhase === 1) {
+                    const barracks = findNearestBarracks(p.x, p.z, p.faction);
+                    const dest = barracks || keeps.find(k => k.faction === p.faction);
+                    if (dest && Math.hypot(dest.x - p.x, dest.z - p.z) <= 6.0) {
+                        if (p.wagon) {
+                            for (let key in p.wagon) {
+                                if (p.wagon[key] > 0) {
+                                    if (dest.inventory) dest.inventory[key] = (dest.inventory[key] || 0) + p.wagon[key];
+                                    spawnFloatingText("+" + p.wagon[key] + " " + key, dest.x, dest.y + 3.0, dest.z, 0xffffff);
+                                    p.wagon[key] = 0;
+                                }
+                            }
+                        }
+                        if (!p.workerBuilding || (p.originLoadhouse && p.originLoadhouse.state === "dead")) {
+                            revertWagonToPeasant(p);
+                        } else {
+                            p.deliveryPhase = 2;
+                            p.targetPosition = new THREE.Vector3(p.workerBuilding.x, getTerrainHeight(p.workerBuilding.x, p.workerBuilding.z), p.workerBuilding.z);
+                        }
+                    }
+                } else if (p.deliveryPhase === 2) {
+                    if (!p.workerBuilding || (p.originLoadhouse && p.originLoadhouse.state === "dead")) {
+                        revertWagonToPeasant(p);
+                    } else {
+                        p.targetPosition = new THREE.Vector3(p.workerBuilding.x, getTerrainHeight(p.workerBuilding.x, p.workerBuilding.z), p.workerBuilding.z);
+                        if (!p.meshSwappedEmpty) {
+                            p.meshSwappedEmpty = true;
+                            if (p.mesh) {
+                                if (p.selectionRing) p.mesh.remove(p.selectionRing);
+                                scene.remove(p.mesh);
+                                disposeHierarchy(p.mesh);
+                            }
+                            p.mesh = buildWagonMesh(false, p.faction);
+                            if (p.selectionRing) p.mesh.add(p.selectionRing);
+                            scene.add(p.mesh);
+                        }
+                        const dist = Math.hypot(p.workerBuilding.x - p.x, p.workerBuilding.z - p.z);
+                        if (dist <= (p.workerBuilding.radius || 3.0) + 2.0) {
+                            revertWagonToPeasant(p);
+                            p.state = "loadhouse_worker";
+                        }
+                    }
+                }
+            }
+        } else if ((p.state === "wander" || p.state === "idle") && (p.payloadAmount > 0 || p.craftedItem || p.disbandGoods)) {
             p.state = "returning_payload";
-            const keep = keeps.find(k => k.faction === p.faction);
-            if (keep) {
-                p.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
-            } else {
-                p.payloadAmount = 0;
+            if (p.disbandGoods) {
+                const b = findNearestBarracks(p.x, p.z, p.faction);
+                if (b) {
+                    p.targetBuilding = b;
+                    p.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
+                } else {
+                    const keep = keeps.find(k => k.faction === p.faction);
+                    if (keep) p.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
+                }
+            } else if (p.craftedItem) {
+                const targetDrop = findNearestMilitaryDropoff(p.x, p.z, p.faction) || keeps.find(k => k.faction === p.faction);
+                if (targetDrop) {
+                    p.targetBuilding = targetDrop;
+                    p.targetPosition = new THREE.Vector3(targetDrop.x, getTerrainHeight(targetDrop.x, targetDrop.z), targetDrop.z);
+                }
+            } else if (p.payloadResource) {
+                const keep = keeps.find(k => k.faction === p.faction);
+                if (keep) {
+                    p.targetPosition = new THREE.Vector3(keep.x, getTerrainHeight(keep.x, keep.z), keep.z);
+                } else {
+                    p.payloadAmount = 0;
+                }
             }
         }
     });
@@ -7370,7 +8090,7 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
     processConstructionQueue(activePeasants, keeps, e => e.type === "house");
     processSoldierQueue(activePeasants);
     processSiegeQueue(activePeasants);
-    const idlePeasantPool = activePeasants.filter(e => e.faction === "red" && (e.state === "wander" || e.state === "going_home"));
+    const idlePeasantPool = activePeasants.filter(e => e.faction === "red" && (e.state === "wander" || e.state === "going_home" || e.state === "idle"));
     activePeasants.forEach(p => {
         if ((p.state === "constructing_fetching" || p.state === "constructing_delivering") && p.workerBuilding && p.workerBuilding.isUnreachable) {
             let rType = p.workerBuilding.material || ((p.workerBuilding.type === "wall_column" || p.workerBuilding.type === "gatehouse" || p.workerBuilding.type === "wall_ramp" || p.workerBuilding.type === "tower") ? "stone" : "wood");
@@ -7389,7 +8109,7 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
             p.path = null;
         }
     });
-    entities.forEach(b => {
+    buildings.forEach(b => {
         if (b.state === "dead" || b.type === "tree" || b.type === "gold" || b.type === "iron" || b.type === "stone" || b.baseSpeed > 0) return;
         // Skip inert buildings that are fully constructed (they don't need reachability or workflow updates)
         if (!b.isPlanned && (b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "house" || b.type === "keep")) return;
@@ -7418,10 +8138,9 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                 if (b.mesh) {
                     b.mesh.traverse(c => {
                         if (c.isMesh && c.material) {
-                            if (b.isPlanned) {
-                                if (c.material.color) c.material.color.setHex(0xffa500); // Orange
-                            } else {
+                            if (!b.isPlanned) {
                                 if (c.material.emissive) {
+                                    makeMaterialUnique(c);
                                     if (c.material.origEmissive === undefined) c.material.origEmissive = c.material.emissive.getHex();
                                     c.material.emissive.setHex(0xcc5500); // Dark Orange
                                 }
@@ -7438,11 +8157,13 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                     b.mesh.traverse(c => {
                         if (c.isMesh && c.material) {
                             if (b.isPlanned) {
+                                makeMaterialUnique(c);
                                 if (c.material.color) c.material.color.setHex(0x00ff00);
                             } else if (b.isZzz && window.applyZzzTint) {
                                 window.applyZzzTint(b, true);
                             } else {
                                 if (c.material.emissive && c.material.origEmissive !== undefined) {
+                                    makeMaterialUnique(c);
                                     c.material.emissive.setHex(c.material.origEmissive);
                                 }
                             }
@@ -7485,6 +8206,8 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                     let cycleTime = (b && b.isFertile) ? 20.0 : 60.0;
                     if (farmer.workTimer >= cycleTime) { // 20s or 60s cycle based on fertility
                         farmer.state = "farmer_walking_to_keep";
+                        farmer.payloadAmount = 20;
+                        farmer.payloadResource = "food";
                         const drop = findNearestDropoff(farmer.x, farmer.z, farmer.faction);
                         if (drop) {
                             farmer.targetBuilding = drop;
@@ -7524,6 +8247,8 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                             drop.storage.food = (drop.storage.food || 0) + 20;
                             spawnFloatingText("+20 Food", drop.x, drop.y + 3.0, drop.z, 0x4caf50);
                         }
+                        farmer.payloadAmount = 0;
+                        farmer.payloadResource = null;
                         farmer.state = "farmer_walking_to_farm";
                         farmer.targetBuilding = null;
                         farmer.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
@@ -7609,6 +8334,8 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                     if (woodcutter.workTimer >= 10.0) { // wait 10s in hut
                         if (b.logsCount > 0) b.logsCount--;
                         woodcutter.state = "woodcutter_delivering";
+                        woodcutter.payloadAmount = 20;
+                        woodcutter.payloadResource = "wood";
                         woodcutter.mesh.visible = true; // Exit hut
                         const drop = findNearestDropoff(woodcutter.x, woodcutter.z, woodcutter.faction);
                         if (drop) {
@@ -7645,6 +8372,8 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                             drop.storage.wood += 20;
                             spawnFloatingText("+20 Wood", drop.x, drop.y + 3.0, drop.z, 0x8d6e63);
                         }
+                        woodcutter.payloadAmount = 0;
+                        woodcutter.payloadResource = null;
                         if (b.logsCount && b.logsCount > 0) {
                             woodcutter.state = "woodcutter_walking_to_hut";
                             woodcutter.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
@@ -7704,6 +8433,9 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                 if (trans.state === "mining" && (b.storedResources || 0) >= 20) {
                     b.storedResources -= 20;
                     trans.state = "miner_delivering";
+                    const mType = b.mineResourceType || "gold";
+                    trans.payloadAmount = 20;
+                    trans.payloadResource = mType;
                     trans.mesh.visible = true; // exit mine
                     const drop = findNearestDropoff(trans.x, trans.z, trans.faction);
                     if (drop) {
@@ -7740,6 +8472,8 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                             drop.storage[mType] = (drop.storage[mType] || 0) + 20;
                             spawnFloatingText("+20 " + mType.toUpperCase(), drop.x, drop.y + 3.0, drop.z, mType === "gold" ? 0xffeb3b : (mType === "iron" ? 0x9e9e9e : 0x78909c));
                         }
+                        trans.payloadAmount = 0;
+                        trans.payloadResource = null;
                         trans.state = "miner_returning";
                         trans.targetBuilding = null;
                         trans.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
@@ -7901,6 +8635,12 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                                 worker.targetBuilding = drop;
                                 worker.targetPosition = new THREE.Vector3(drop.x, getTerrainHeight(drop.x, drop.z), drop.z);
                                 worker.craftedItem = activeProd.name;
+                                const isFurniture = activeProd.name === "Furniture";
+                                const isGem = activeProd.name === "Gem";
+                                const isBrew = activeProd.name === "Brew";
+                                const yieldAmt = isFurniture ? 10 : (isGem ? 1 : (isBrew ? 20 : (activeProd.name === "Premium Food" ? 20 : 1)));
+                                worker.payloadAmount = yieldAmt;
+                                worker.payloadResource = activeProd.name;
                                 worker.path = null;
                                 if (worker.mesh) worker.mesh.visible = true;
                             } else {
@@ -7980,6 +8720,8 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                             spawnFloatingText("+1 " + worker.craftedItem, drop.x, drop.y + 3.0, drop.z, 0xd4af37);
                         }
                         worker.craftedItem = null;
+                        worker.payloadAmount = 0;
+                        worker.payloadResource = null;
                         worker.state = "shop_worker";
                         worker.targetBuilding = null;
                         worker.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
@@ -8037,7 +8779,7 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                     let wagonTotal = Object.values(b.wagon).reduce((sum, val) => sum + val, 0);
                     if (worker.state === "loadhouse_worker" && wagonTotal === 0) {
                         b.hasHorse = false;
-                        if (b.mesh) scene.remove(b.mesh);
+                        if (b.mesh) { scene.remove(b.mesh); disposeHierarchy(b.mesh); }
                         b.mesh = buildEntityMesh(b); scene.add(b.mesh); b.mesh.position.set(b.x, b.y, b.z);
                         updateUI();
                     }
@@ -8047,7 +8789,7 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                         const stats = getHorseStats(worker.faction);
                         if (stats.used < stats.cap) {
                             b.hasHorse = true;
-                            if (b.mesh) scene.remove(b.mesh);
+                            if (b.mesh) { scene.remove(b.mesh); disposeHierarchy(b.mesh); }
                             b.mesh = buildEntityMesh(b); scene.add(b.mesh); b.mesh.position.set(b.x, b.y, b.z);
                             updateUI();
                         }
@@ -8079,10 +8821,17 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                             const timeSinceFirst = b.firstLoadTime > 0 ? (Date.now() - b.firstLoadTime) / 1000 : 0;
                             if (wagonTotal >= 200 || (wagonTotal > 0 && !canLoadMoreWagon) || timeSinceFirst >= 10.0) {
                                 worker.state = "wagon_delivering";
+                                worker.isWagon = true;
+                                worker.originLoadhouse = b;
+                                worker.wagon = worker.wagon || {};
+                                for (let key in b.wagon) {
+                                    worker.wagon[key] = (worker.wagon[key] || 0) + (b.wagon[key] || 0);
+                                    b.wagon[key] = 0;
+                                }
                                 let hasKeepGoods = false;
                                 let hasBarracksGoods = false;
-                                for (let key in b.wagon) {
-                                    if (b.wagon[key] > 0) {
+                                for (let key in worker.wagon) {
+                                    if (worker.wagon[key] > 0) {
                                         if (["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].includes(key)) hasKeepGoods = true;
                                         else hasBarracksGoods = true;
                                     }
@@ -8108,12 +8857,13 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                                     }
                                 }
                                 b.wagonAway = true;
-                                const wGroup = b.mesh.children.find(c => c.name === "wagonGroup");
+                                const wGroup = b.mesh ? b.mesh.children.find(c => c.name === "wagonGroup") : null;
                                 if (wGroup) wGroup.visible = false; // Hide parked wagon
                                 // Swap worker mesh to moving wagon
                                 if (worker.mesh) {
-                                    scene.remove(worker.mesh);
                                     if (worker.selectionRing) worker.mesh.remove(worker.selectionRing);
+                                    scene.remove(worker.mesh);
+                                    disposeHierarchy(worker.mesh);
                                 }
                                 worker.mesh = buildWagonMesh(true, worker.faction);
                                 if (worker.selectionRing) worker.mesh.add(worker.selectionRing);
@@ -8122,74 +8872,7 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
                             }
                         }
                     } else if (worker.state === "wagon_delivering") {
-                        if (worker.deliveryPhase === 0) {
-                            const keep = keeps.find(k => k.faction === worker.faction);
-                            if (keep && Math.hypot(keep.x - worker.x, keep.z - worker.z) <= 6.0) {
-                                ["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].forEach(res => {
-                                    if (b.wagon[res] > 0) {
-                                        if (worker.faction === "red") resources[res] += b.wagon[res];
-                                        spawnFloatingText("+" + b.wagon[res] + " " + res, keep.x, keep.y + 4.0, keep.z, 0xffffff);
-                                        b.wagon[res] = 0;
-                                    }
-                                });
-                                worker.deliveryPhase = 1;
-                                const barracks = findNearestBarracks(worker.x, worker.z, worker.faction);
-                                if (barracks && worker.hasBarracksGoods) {
-                                    worker.targetPosition = new THREE.Vector3(barracks.x, getTerrainHeight(barracks.x, barracks.z), barracks.z);
-                                } else {
-                                    worker.deliveryPhase = 2;
-                                    worker.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
-                                }
-                            }
-                        } else if (worker.deliveryPhase === 1) {
-                            const barracks = findNearestBarracks(worker.x, worker.z, worker.faction);
-                            if (barracks && Math.hypot(barracks.x - worker.x, barracks.z - worker.z) <= 6.0) {
-                                for (let key in b.wagon) {
-                                    if (!["food", "wood", "iron", "stone", "gold", "premium_food", "brew", "furniture", "gem"].includes(key) && b.wagon[key] > 0) {
-                                        barracks.inventory[key] = (barracks.inventory[key] || 0) + b.wagon[key];
-                                        spawnFloatingText("+" + b.wagon[key] + " " + key, barracks.x, barracks.y + 3.0, barracks.z, 0xffffff);
-                                        b.wagon[key] = 0;
-                                    }
-                                }
-                                worker.deliveryPhase = 2;
-                                worker.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
-                            } else if (!barracks) {
-                                worker.deliveryPhase = 2;
-                                worker.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
-                            }
-                        }
-                        if (worker.deliveryPhase === 2) {
-                            worker.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
-                            if (!worker.meshSwappedEmpty) {
-                                worker.meshSwappedEmpty = true;
-                                if (worker.mesh) {
-                                    scene.remove(worker.mesh);
-                                    if (worker.selectionRing) worker.mesh.remove(worker.selectionRing);
-                                }
-                                worker.mesh = buildWagonMesh(false, worker.faction);
-                                if (worker.selectionRing) worker.mesh.add(worker.selectionRing);
-                                scene.add(worker.mesh);
-                            }
-                            const dist = Math.hypot(b.x - worker.x, b.z - worker.z);
-                            let arrived = dist <= (b.radius || 3.0) + 2.0;
-                            if (arrived) {
-                                worker.state = "loadhouse_worker";
-                                worker.meshSwappedEmpty = false;
-                                b.firstLoadTime = 0;
-                                b.wagonAway = false;
-                                const wGroup = b.mesh.children.find(c => c.name === "wagonGroup");
-                                if (wGroup) wGroup.visible = true; // Show wagon again
-                                // Revert to peasant mesh
-                                if (worker.mesh) {
-                                    scene.remove(worker.mesh);
-                                    if (worker.selectionRing) worker.mesh.remove(worker.selectionRing);
-                                }
-                                worker.mesh = buildEntityMesh(worker);
-                                if (worker.selectionRing) worker.mesh.add(worker.selectionRing);
-                                scene.add(worker.mesh);
-                                updateUI();
-                            }
-                        }
+                        // Wagon movement, delivery, and return are handled in the activePeasants wagon loop above
                     }
                 } else {
                     // ON-FOOT LOGIC (No horse)
@@ -8298,6 +8981,9 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
 }
 // Helpers
 function getHorseStats(faction) {
+    if (window.__currentHorseStats && window.__currentHorseStats[faction] !== undefined && window.__currentHorseStats[faction].frame === gameFrameCount) {
+        return window.__currentHorseStats[faction].stats;
+    }
     const stables = (window.__gameStateCache ? window.__gameStateCache.stables.filter(s => s.faction === faction) : entities.filter(e => e.type === "stables" && e.faction === faction && !e.isDead));
     let cap = 0;
     stables.forEach(s => {
@@ -8316,18 +9002,32 @@ function getHorseStats(faction) {
             if (q.hasHorse) used++;
         });
     }
-    return { cap, used };
+    const stats = { cap, used };
+    if (!window.__currentHorseStats) window.__currentHorseStats = {};
+    window.__currentHorseStats[faction] = { frame: gameFrameCount, stats: stats };
+    return stats;
 }
 function findNearestTree(x, z) {
     let bestDist = Infinity;
     let candidate = null;
-    // Get all active peasants to see who is targeting what
-    const activePeasants = entities.filter(e => e.type === "peasant" && e.state === "woodcutter_walking_to_tree");
+    // Count targeting peasants to avoid crowded trees (O(N) once)
+    const treeTargetCount = new Map();
+    const activePeasants = window.__activeUnits || entities;
+    for (let i = 0; i < activePeasants.length; i++) {
+        let e = activePeasants[i];
+        if (e.type === "peasant" && e.state === "woodcutter_walking_to_tree" && e.targetTree) {
+            treeTargetCount.set(e.targetTree, (treeTargetCount.get(e.targetTree) || 0) + 1);
+        }
+    }
+    
     // Determine the worker's current region
     const sx = Math.max(0, Math.min(299, Math.round(x) + 150));
     const sz = Math.max(0, Math.min(299, Math.round(z) + 150));
     const unitRegion = regionGrid[sz * 300 + sx];
-    entities.forEach(ent => {
+    
+    const candidates = window.__buildings || entities;
+    for (let i = 0; i < candidates.length; i++) {
+        const ent = candidates[i];
         if (ent.type === "tree" && ent.state !== "dead") {
             // Check if tree is accessible from the unit's region
             let reachable = false;
@@ -8348,73 +9048,77 @@ function findNearestTree(x, z) {
                     }
                 }
             }
-            if (!reachable) return;
-            let targetingCount = 0;
-            activePeasants.forEach(p => {
-                if (p.targetTree === ent) targetingCount++;
-            });
-            // Add a heavy distance penalty for every peasant already targeting this tree
-            const dist = Math.hypot(ent.x - x, ent.z - z) + (targetingCount * 20.0);
+            if (!reachable) continue;
+            
+            const targetingCount = treeTargetCount.get(ent) || 0;
+            const distSq = (ent.x - x)**2 + (ent.z - z)**2;
+            const dist = Math.sqrt(distSq) + (targetingCount * 20.0);
             if (dist < bestDist) {
                 bestDist = dist;
                 candidate = ent;
             }
         }
-    });
+    }
     return candidate;
 }
 function findNearestDropoff(x, z, faction, onlyKeep = false) {
     let bestDist = Infinity;
     let target = null;
-    entities.forEach(ent => {
-        if (ent.state === "dead" || ent.isPlanned || ent.faction !== faction) return;
+    const candidates = window.__buildings || entities;
+    for (let i = 0; i < candidates.length; i++) {
+        const ent = candidates[i];
+        if (ent.state === "dead" || ent.isPlanned || ent.faction !== faction) continue;
         if (ent.type === "keep") {
-            const dist = Math.hypot(ent.x - x, ent.z - z);
-            if (dist < bestDist) { bestDist = dist; target = ent; }
+            const distSq = (ent.x - x)**2 + (ent.z - z)**2;
+            if (distSq < bestDist) { bestDist = distSq; target = ent; }
         } else if (ent.type === "loadhouse" && !onlyKeep) {
-            const dist = Math.hypot(ent.x - x, ent.z - z);
+            const distSq = (ent.x - x)**2 + (ent.z - z)**2;
             let lhTotal = 0;
             if (ent.storage) lhTotal = Object.values(ent.storage).reduce((a,b)=>a+b,0);
-            if (dist < bestDist && lhTotal < 200) { bestDist = dist; target = ent; }
+            if (distSq < bestDist && lhTotal < 200) { bestDist = distSq; target = ent; }
         }
-    });
+    }
     return target;
 }
 function findNearestMilitaryDropoff(x, z, faction) {
     let bestDist = Infinity;
     let target = null;
-    entities.forEach(ent => {
-        if (ent.state === "dead" || ent.isPlanned || ent.faction !== faction) return;
+    const candidates = window.__buildings || entities;
+    for (let i = 0; i < candidates.length; i++) {
+        const ent = candidates[i];
+        if (ent.state === "dead" || ent.isPlanned || ent.faction !== faction) continue;
         if (ent.type === "barracks") {
-            const dist = Math.hypot(ent.x - x, ent.z - z);
-            if (dist < bestDist) { bestDist = dist; target = ent; }
+            const distSq = (ent.x - x)**2 + (ent.z - z)**2;
+            if (distSq < bestDist) { bestDist = distSq; target = ent; }
         } else if (ent.type === "loadhouse") {
-            const dist = Math.hypot(ent.x - x, ent.z - z);
+            const distSq = (ent.x - x)**2 + (ent.z - z)**2;
             let lhTotal = 0;
             if (ent.storage) lhTotal = Object.values(ent.storage).reduce((a,b)=>a+b,0);
-            if (dist < bestDist && lhTotal < 200) { bestDist = dist; target = ent; }
+            if (distSq < bestDist && lhTotal < 200) { bestDist = distSq; target = ent; }
         }
-    });
+    }
     return target;
 }
 function findNearestBarracks(x, z, faction) {
     let bestDist = Infinity;
     let candidate = null;
-    entities.forEach(ent => {
+    const candidates = window.__buildings || entities;
+    for (let i = 0; i < candidates.length; i++) {
+        const ent = candidates[i];
         if (ent.type === "barracks" && ent.faction === faction && ent.state !== "dead") {
-            const dist = Math.hypot(ent.x - x, ent.z - z);
-            if (dist < bestDist) {
-                bestDist = dist;
+            const distSq = (ent.x - x)**2 + (ent.z - z)**2;
+            if (distSq < bestDist) {
+                bestDist = distSq;
                 candidate = ent;
             }
         }
-    });
+    }
     return candidate;
 }
 // --- SOLDIER TRAINING PROCESS ---
 window.armorLockState = false;
 window.toggleMount = function() {
-    const rks = selectedEntities.filter(e => e.type === "soldier" && e.weapon === "RoyalKnight");
+    const rks = selectedEntities.filter(e => (e.type === "soldier" && e.weapon === "RoyalKnight") || e.type === "king");
     if (rks.length === 0) return;
     // Check if any are unmounted to mount them, otherwise dismount all
     const anyUnmounted = rks.some(e => !e.hasHorse);
@@ -8433,7 +9137,7 @@ window.toggleMount = function() {
             }
         });
         if (available < rks.filter(e => !e.hasHorse).length) {
-            showStatusLog("Not enough horses available for all knights!");
+            showStatusLog("Not enough horses available for all units!");
         }
     } else {
         // Dismount all
@@ -8442,6 +9146,9 @@ window.toggleMount = function() {
             rk.isMounting = false;
             rk.mountTimer = 0;
             if (rk.weapon === "RoyalKnight") {
+                rk.speed = 2.0;
+                rk.baseSpeed = rk.speed;
+            } else if (rk.type === "king") {
                 rk.speed = 2.0;
                 rk.baseSpeed = rk.speed;
             }
@@ -8727,10 +9434,10 @@ function applyEquipmentStats(peasant, config) {
         peasant.armor = 4;
         peasant.speed = 2.5;
     } else if (config.weapon === "Brute") {
-        peasant.maxHealth = 475;
-        peasant.health = 475;
+        peasant.maxHealth = 400;
+        peasant.health = 400;
         peasant.armor = 0;
-        peasant.speed = 2.4;
+        peasant.speed = 3.0;
     } else if (config.weapon === "Slinger") {
         peasant.maxHealth = 50;
         peasant.health = 50;
@@ -8779,15 +9486,28 @@ function applyCommandToUnit(unit, cmd) {
         unit.trainingConfig = null;
         if (unit.faction === "red") updateSiegeShopQueueUI();
     }
+    if (unit.isWagon) {
+        if (unit.workerBuilding && !unit.originLoadhouse) {
+            unit.originLoadhouse = unit.workerBuilding;
+        }
+        if (unit.originLoadhouse && unit.originLoadhouse.wagon && !unit.wagon) {
+            unit.wagon = { ...unit.originLoadhouse.wagon };
+            for (let k in unit.originLoadhouse.wagon) unit.originLoadhouse.wagon[k] = 0;
+        }
+    }
     unit.timeNearTarget = 0;
     unit.savedFightMoveDest = null;
     unit.helpTarget = cmd.helpTarget || null;
     unit.savedHelpTarget = cmd.helpTarget || null;
     unit.path = null;
     unit.pathCooldown = 0;
-    unit.workerBuilding = cmd.workerBuilding;
-    unit.payloadResource = cmd.payloadResource;
-    unit.intendedFetchAmount = cmd.intendedFetchAmount;
+    unit.workerBuilding = cmd.workerBuilding !== undefined ? cmd.workerBuilding : null;
+    if (cmd.payloadResource !== undefined && cmd.payloadResource !== null) {
+        unit.payloadResource = cmd.payloadResource;
+    } else if (!unit.payloadAmount || unit.payloadAmount <= 0) {
+        unit.payloadResource = null;
+    }
+    unit.intendedFetchAmount = cmd.intendedFetchAmount || 0;
     unit.state = cmd.state;
     unit.targetPosition = cmd.targetPosition ? cmd.targetPosition.clone() : null;
     unit.targetEntity = cmd.targetEntity;
@@ -8903,9 +9623,17 @@ function performDisband(ent) {
     ent.isDead = true;
     selectedEntities = selectedEntities.filter(e => e !== ent);
     needsPathGridUpdate = true;
-    if (ent.mesh) scene.remove(ent.mesh);
-    if (ent.healthBar) scene.remove(ent.healthBar);
-    if (ent.healthBar) scene.remove(ent.healthBar);
+    needsRegionGridUpdate = true;
+    if (ent.mesh) { scene.remove(ent.mesh); disposeHierarchy(ent.mesh); }
+    if (ent.healthBar) {
+        scene.remove(ent.healthBar);
+        if (ent.healthBar.material) {
+            if (ent.healthBar.material.map) ent.healthBar.material.map.dispose();
+            ent.healthBar.material.dispose();
+        }
+        if (ent.healthTexture) ent.healthTexture.dispose();
+        ent.healthBar = null;
+    }
     
     if (ent.homeBuilding && ent.homeBuilding.spawnedPeasants) {
         ent.homeBuilding.spawnedPeasants = ent.homeBuilding.spawnedPeasants.filter(p => p !== ent);
@@ -8959,7 +9687,7 @@ function startPlacement(type) {
     const d = config.dimZ !== undefined ? config.dimZ : (config.radius || 0.5) * 2;
     const h = config.height || 2.0;
     // Use a box that perfectly represents the actual collision bounds
-    const box = new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, h, d - 0.1), mat);
+    const box = new THREE.Mesh(getSharedGeo('BoxGeometry', w - 0.1, h, d - 0.1), mat);
     box.position.y = h / 2;
     ghostGroup.add(box);
     placementGhost = ghostGroup;
@@ -8968,6 +9696,17 @@ function startPlacement(type) {
     updateSelectionHUD();
 }
 function cancelPlacement() {
+    isBuildingDragging = false;
+    buildingDragStart = null;
+    buildingDragGhosts.forEach(g => {
+        scene.remove(g);
+        g.traverse(c => {
+            if (c.geometry) c.geometry.dispose();
+            if (c.material) c.material.dispose();
+        });
+    });
+    buildingDragGhosts = [];
+    buildingDragLinePoints = [];
     if (placementGhost) {
         scene.remove(placementGhost);
         disposeHierarchy(placementGhost);
@@ -9012,7 +9751,133 @@ function getSnappedPoint(pt, e, mode) {
     return res;
 }
 function handlePlacementGhostUpdate(e) {
-    if (!placementMode || !placementGhost) return;
+    if (!placementMode) return;
+    
+    if (isBuildingDragging && buildingDragStart) {
+        if (placementGhost) placementGhost.visible = false;
+        
+        let pt = getTerrainIntersection(e.clientX, e.clientY);
+        pt = getSnappedPoint(pt, e, placementMode);
+        if (!pt) return;
+        
+        const config = BUILDING_TYPES[placementMode];
+        const spanX = config.dimX !== undefined ? config.dimX : (config.radius || 0.5) * 2;
+        const spanZ = config.dimZ !== undefined ? config.dimZ : (config.radius || 0.5) * 2;
+        
+        const dx = pt.x - buildingDragStart.x;
+        const dz = pt.z - buildingDragStart.z;
+        
+        let countX = Math.max(1, Math.floor(Math.abs(dx) / spanX) + 1);
+        let countZ = Math.max(1, Math.floor(Math.abs(dz) / spanZ) + 1);
+        
+        // Safety cap to prevent too many models freezing the browser
+        if (countX > 15) countX = 15;
+        if (countZ > 15) countZ = 15;
+        
+        let totalCount = countX * countZ;
+        
+        // Limit count by affordance
+        const ledger = getLedger("red");
+        let maxAffordable = totalCount;
+        if (config.material === "stone" && config.cost) {
+            maxAffordable = Math.floor(ledger.stone.spendable / config.cost);
+        } else if (config.cost) {
+            maxAffordable = Math.floor(ledger.wood.spendable / config.cost);
+        } else if (config.goldCost) {
+            maxAffordable = Math.floor(ledger.gold.spendable / config.goldCost);
+        }
+        if (totalCount > maxAffordable && maxAffordable > 0) totalCount = maxAffordable;
+        
+        buildingDragLinePoints = [];
+        let dirX = Math.sign(dx) !== 0 ? Math.sign(dx) : 1;
+        let dirZ = Math.sign(dz) !== 0 ? Math.sign(dz) : 1;
+        
+        let added = 0;
+        for (let iZ = 0; iZ < countZ && added < totalCount; iZ++) {
+            for (let iX = 0; iX < countX && added < totalCount; iX++) {
+                let p = buildingDragStart.clone();
+                p.x += iX * spanX * dirX;
+                p.z += iZ * spanZ * dirZ;
+                p.y = getTerrainHeight(p.x, p.z);
+                buildingDragLinePoints.push(p);
+                added++;
+            }
+        }
+        
+        while (buildingDragGhosts.length < buildingDragLinePoints.length) {
+            const mockEnt = {
+                type: placementMode,
+                faction: "red",
+                isPlanned: true,
+                material: config.material,
+                dimX: config.dimX,
+                dimZ: config.dimZ,
+                radius: config.radius,
+                height: config.height
+            };
+            const ghost = buildEntityMesh(mockEnt);
+            ghost.traverse(c => {
+                if (c.material) {
+                    c.material = c.material.clone();
+                    c.material.transparent = true;
+                    c.material.opacity = 0.6;
+                    c.material.depthTest = false;
+                }
+            });
+            scene.add(ghost);
+            buildingDragGhosts.push(ghost);
+        }
+        while (buildingDragGhosts.length > buildingDragLinePoints.length) {
+            let ghost = buildingDragGhosts.pop();
+            scene.remove(ghost);
+            ghost.traverse(c => {
+                if (c.geometry) c.geometry.dispose();
+                if (c.material) c.material.dispose();
+            });
+        }
+        
+        for (let i = 0; i < buildingDragLinePoints.length; i++) {
+            let p = buildingDragLinePoints[i];
+            let ghost = buildingDragGhosts[i];
+            ghost.position.set(p.x, p.y, p.z);
+            
+            // We just do simple checks for the ghost coloring inline for performance
+            let isV = true;
+            entities.forEach(entity => {
+                if (entity.baseSpeed === 0) {
+                    const hwX = config.dimX !== undefined ? config.dimX / 2 : config.radius || 0.5;
+                    const hwZ = config.dimZ !== undefined ? config.dimZ / 2 : config.radius || 0.5;
+                    const eHwX = entity.dimX !== undefined ? entity.dimX / 2 : entity.radius || 0.5;
+                    const eHwZ = entity.dimZ !== undefined ? entity.dimZ / 2 : entity.radius || 0.5;
+                    if (Math.abs(entity.x - p.x) < hwX + eHwX - 0.05 && Math.abs(entity.z - p.z) < hwZ + eHwZ - 0.05) isV = false;
+                }
+            });
+            let isR = false;
+            const bx = Math.max(0, Math.min(299, Math.round(p.x) + 150));
+            const bz = Math.max(0, Math.min(299, Math.round(p.z) + 150));
+            const checkRad = Math.ceil((config.dimX ? Math.max(config.dimX, config.dimZ) / 2 : (config.radius || 0.5)) + 1.5);
+            if (isV) {
+                for (let ox = -checkRad; ox <= checkRad && !isR; ox++) {
+                    for (let oz = -checkRad; oz <= checkRad && !isR; oz++) {
+                        if (bx+ox >= 0 && bx+ox < 300 && bz+oz >= 0 && bz+oz < 300) {
+                            if (keepRegions.has(regionGrid[(bz+oz) * 300 + (bx+ox)])) isR = true;
+                        }
+                    }
+                }
+            }
+            ghost.traverse(child => {
+                if (child.material) {
+                    makeMaterialUnique(child);
+                    if (!isV) child.material.color.setHex(0xff0000); // Red
+                    else if (!isR) child.material.color.setHex(0xffa500); // Orange
+                    else child.material.color.setHex(0x00ff00); // Green
+                }
+            });
+            ghost.visible = true;
+        }
+        return;
+    }
+    if (!placementGhost) return;
     let pt = getTerrainIntersection(e.clientX, e.clientY);
     pt = getSnappedPoint(pt, e, placementMode);
     if (pt) {
@@ -9083,6 +9948,7 @@ function handlePlacementGhostUpdate(e) {
         }
         placementGhost.traverse(child => {
             if (child.material) {
+                makeMaterialUnique(child);
                 if (!isValid) child.material.color.setHex(0xff0000); // Red
                 else if (!isReachable) child.material.color.setHex(0xffa500); // Orange
                 else if (placementMode === "farm" && !isBuildingOnResource(pt.x, pt.z, config.radius, "fertile")) child.material.color.setHex(0xffff00); // Yellow for barren farm
@@ -9091,11 +9957,10 @@ function handlePlacementGhostUpdate(e) {
         });
     }
 }
-function tryPlaceBuilding(e) {
-    let pt = getTerrainIntersection(e.clientX, e.clientY);
-    pt = getSnappedPoint(pt, e, placementMode);
-    if (!pt) return;
-    const config = BUILDING_TYPES[placementMode];
+function tryPlaceBuildingAt(pt, mode) {
+    if (!pt || !mode || !BUILDING_TYPES[mode]) return;
+
+    const config = BUILDING_TYPES[mode];
     // Validate
     let isValid = true;
     entities.forEach(entity => {
@@ -9117,9 +9982,9 @@ function tryPlaceBuilding(e) {
         }
     });
     let targetDeposit = null;
-    if (placementMode === "farm") {
+    if (mode === "farm") {
             // Farms can be placed anywhere, fertility will be determined at creation
-    } else if (placementMode === "mine") {
+    } else if (mode === "mine") {
         const goldDep = isBuildingOnResource(pt.x, pt.z, config.radius, "gold");
         const ironDep = isBuildingOnResource(pt.x, pt.z, config.radius, "iron");
         const stoneDep = isBuildingOnResource(pt.x, pt.z, config.radius, "stone");
@@ -9127,7 +9992,7 @@ function tryPlaceBuilding(e) {
         if (!targetDeposit) isValid = false;
     }
     let slopeTooSteep = false;
-    if (isValid && placementMode !== "wall_column" && placementMode !== "wall_ramp" && placementMode !== "gatehouse") {
+    if (isValid && mode !== "wall_column" && mode !== "wall_ramp" && mode !== "gatehouse") {
         const hwX = config.dimX !== undefined ? config.dimX / 2 : config.radius || 0.5;
         const hwZ = config.dimZ !== undefined ? config.dimZ / 2 : config.radius || 0.5;
         const h1 = getTerrainHeight(pt.x - hwX, pt.z - hwZ);
@@ -9137,7 +10002,7 @@ function tryPlaceBuilding(e) {
         const minH = Math.min(h1, h2, h3, h4);
         const maxH = Math.max(h1, h2, h3, h4);
         let maxAllowed = 1.0;
-        if (placementMode === "mine") {
+        if (mode === "mine") {
             const span = Math.max(hwX * 2, hwZ * 2);
             maxAllowed = span * Math.tan(40 * Math.PI / 180);
         }
@@ -9175,17 +10040,17 @@ function tryPlaceBuilding(e) {
     if (config.goldCost) resources.gold -= config.goldCost;
     if (config.ironCost) resources.iron -= config.ironCost;
     // Construct Planned Building
-    const building = createEntity(placementMode, "red", pt.x, pt.z, true);
+    const building = createEntity(mode, "red", pt.x, pt.z, true);
     building.escrow = config.cost || config.goldCost || 0;
     if (config.goldCost && !config.cost) {
         building.material = "gold";
     }
-    if (WORKSHOP_PRODS[placementMode]) {
+    if (WORKSHOP_PRODS[mode]) {
         window.workshopPreferences = window.workshopPreferences || {};
-        building.activeProductIdx = window.workshopPreferences[placementMode] || 0;
+        building.activeProductIdx = window.workshopPreferences[mode] || 0;
     }
     // If mine, store resource type
-    if (placementMode === "mine" && targetDeposit) {
+    if (mode === "mine" && targetDeposit) {
         building.mineResourceType = targetDeposit.type;
         showStatusLog("Planned Red Mine (" + targetDeposit.type.toUpperCase() + ")!");
     } else {
@@ -9200,6 +10065,12 @@ function tryPlaceBuilding(e) {
         cancelPlacement();
     }
     currentCommandIndex++;
+}
+
+function tryPlaceBuilding(e) {
+    let pt = getTerrainIntersection(e.clientX, e.clientY);
+    pt = getSnappedPoint(pt, e, placementMode);
+    tryPlaceBuildingAt(pt, placementMode);
 }
 // Toggle active product in workshop
 function toggleWorkshopProduct(prodIdx) {
@@ -9238,7 +10109,7 @@ if (typeof window.blueprintGeos === 'undefined') {
     window.getBPGeo = function(type) {
         if (!window.blueprintGeos[type]) {
             if (type === 'box') {
-                window.blueprintGeos.box = new THREE.BoxGeometry(1, 1, 1);
+                window.blueprintGeos.box = getSharedGeo('BoxGeometry', 1, 1, 1);
             } else if (type === 'crenSlope') {
                 const geo = new THREE.BoxGeometry(1.0, 0.5, 1.0);
                 const pos = geo.attributes.position;
@@ -9251,7 +10122,7 @@ if (typeof window.blueprintGeos === 'undefined') {
                 geo.computeVertexNormals();
                 window.blueprintGeos.crenSlope = geo;
             } else if (type === 'crenTop') {
-                window.blueprintGeos.crenTop = new THREE.BoxGeometry(0.5, 1.0, 0.5);
+                window.blueprintGeos.crenTop = getSharedGeo('BoxGeometry', 0.5, 1.0, 0.5);
             }
         }
         return window.blueprintGeos[type];
@@ -9389,6 +10260,7 @@ function showBuildTab(tabKey) {
 }
 // --- INPUT LISTENERS & SELECTION ---
 function onMouseDown(e) {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     if (isGameOver || window.isPaused) return;
     if (e.target.tagName === 'BUTTON' || e.target.closest('#ui-layer') || e.target.closest('#selection-panel') || e.target.closest('#debug-overlay')) return;
     if (e.button === 0) { // Left click
@@ -9415,7 +10287,20 @@ function onMouseDown(e) {
             return;
         }
         if (placementMode) {
-            tryPlaceBuilding(e);
+            if (e.shiftKey) {
+                let pt = getTerrainIntersection(e.clientX, e.clientY);
+                buildingDragStart = getSnappedPoint(pt, e, placementMode);
+                isBuildingDragging = true;
+                if (buildingDragStart) {
+                    buildingDragLinePoints = [buildingDragStart.clone()];
+                } else {
+                    buildingDragLinePoints = [];
+                }
+                if (placementGhost) placementGhost.visible = false;
+                handlePlacementGhostUpdate(e);
+            } else {
+                tryPlaceBuilding(e);
+            }
             return;
         }
         if (wallDrawMode) {
@@ -9526,7 +10411,7 @@ function onMouseDown(e) {
             -(e.clientY / window.innerHeight) * 2 + 1
         );
         raycaster.setFromCamera(mouse, camera);
-        const checkMeshes = entities.filter(ent => ent.state !== "dead" && ent.mesh).map(ent => ent.mesh);
+        const checkMeshes = ((window.__activeUnits || entities).concat(window.__buildings || []).concat((window.__gameStateCache && window.__gameStateCache.trees) ? window.__gameStateCache.trees : [])).filter(ent => ent.state !== "dead" && ent.mesh).map(ent => ent.mesh);
         const intersects = raycaster.intersectObjects(checkMeshes, true).filter(h => !h.object.isCosmetic);
         if (intersects.length > 0) {
             let root = intersects[0].object;
@@ -9749,7 +10634,8 @@ function onMouseMove(e) {
             // Enemy and Blueprint hover logic
             const hasKing = selectedEntities.some(e => e.type === "king");
             const hasPeasant = selectedEntities.some(e => e.type === "peasant");
-            const checkMeshes = entities.filter(ent =>
+            const entsToSearch = (window.__activeUnits || entities).concat(window.__buildings || []).concat((window.__gameStateCache && window.__gameStateCache.trees) ? window.__gameStateCache.trees : []);
+            const checkMeshes = entsToSearch.filter(ent =>
                 ent.state !== "dead" && ent.mesh &&
                 (
                     (ent.faction !== "red" && ent.faction !== "neutral" && (ent.type !== "tree" || hasKing) && ent.type !== "stone" && ent.type !== "gold" && ent.type !== "iron") ||
@@ -9878,6 +10764,37 @@ function onMouseMove(e) {
     }
 }
 function onMouseUp(e) {
+    if (isBuildingDragging) {
+        let pts = buildingDragLinePoints;
+        if ((!pts || pts.length === 0) && buildingDragStart) {
+            pts = [buildingDragStart.clone()];
+        }
+        if (pts && pts.length > 0) {
+            for (let p of pts) {
+                if (!placementMode) break; // Stop if we ran out of resources and cancelPlacement was called
+                tryPlaceBuildingAt(p, placementMode);
+            }
+            updateUI();
+        }
+        isBuildingDragging = false;
+        buildingDragStart = null;
+        buildingDragGhosts.forEach(g => {
+            scene.remove(g);
+            g.traverse(c => {
+                if (c.geometry) c.geometry.dispose();
+                if (c.material) c.material.dispose();
+            });
+        });
+        buildingDragGhosts = [];
+        buildingDragLinePoints = [];
+        if (placementGhost) {
+            placementGhost.visible = true;
+            let curPt = getTerrainIntersection(e.clientX, e.clientY);
+            curPt = getSnappedPoint(curPt, e, placementMode);
+            if (curPt) placementGhost.position.set(curPt.x, curPt.y, curPt.z);
+        }
+        return;
+    }
     if (isRightDrag) {
         isRightDrag = false;
         if (rightDragLine) {
@@ -9893,6 +10810,7 @@ function onMouseUp(e) {
             let currentDist = 0;
             let pathIdx = 0;
             let currentSegDist = 0;
+            const usedTileIds = new Set();
             mobileUnits.forEach((unit, idx) => {
                 let targetPos = rightDragPath[0].clone();
                 if (idx === mobileUnits.length - 1) {
@@ -9914,7 +10832,26 @@ function onMouseUp(e) {
                         }
                     }
                 }
-                targetPos.y = getFloorHeight({radius: 0.1, y: 10000}, targetPos.x, targetPos.z).y;
+                // Check if targetPos is on or near a tower_tile
+                const nearbyTiles = entities.filter(e => e.type === "tower_tile" && !e.isDead && !e.isPlanned && Math.abs(targetPos.x - e.x) <= 0.8 && Math.abs(targetPos.z - e.z) <= 0.8);
+                if (nearbyTiles.length > 0) {
+                    let bestTile = nearbyTiles.find(t => !usedTileIds.has(t.id));
+                    if (!bestTile) {
+                        let minDist = Infinity;
+                        nearbyTiles.forEach(t => {
+                            const d = Math.hypot(t.x - targetPos.x, t.z - targetPos.z);
+                            if (d < minDist) { minDist = d; bestTile = t; }
+                        });
+                    }
+                    if (bestTile) {
+                        usedTileIds.add(bestTile.id);
+                        targetPos.x = bestTile.x;
+                        targetPos.z = bestTile.z;
+                        targetPos.y = bestTile.y + (bestTile.height || 1.0);
+                    }
+                } else {
+                    targetPos.y = getFloorHeight({radius: 0.1, y: 10000}, targetPos.x, targetPos.z).y;
+                }
                 let cmd = {
                     workerBuilding: null,
                     payloadResource: null,
@@ -9966,8 +10903,107 @@ function onMouseUp(e) {
             });
             showStatusLog(rightDragFightMove ? (e.shiftKey ? "Queued Fight Move Formation!" : "Fight Move Formation issued!") : (e.shiftKey ? "Queued Formation command!" : "Formation command issued."));
         } else if (rightDragPath.length > 0) {
-            const pt = rightDragPath[0].clone();
-            mobileUnits.forEach(unit => {
+            const pt = (totalLength > 2.0 ? rightDragPath[rightDragPath.length - 1] : rightDragPath[0]).clone();
+            
+            // Check if pt is on a tower_tile
+            const hitTile = entities.find(e => e.type === "tower_tile" && !e.isDead && !e.isPlanned && Math.abs(pt.x - e.x) <= 0.8 && Math.abs(pt.z - e.z) <= 0.8);
+            if (hitTile) {
+                pt.x = hitTile.x;
+                pt.z = hitTile.z;
+                pt.y = hitTile.y + (hitTile.height || 1.0);
+            }
+
+            // Pre-calculate centroid for formation offset mapping to prevent scrambling
+            let centroidX = 0, centroidZ = 0;
+            mobileUnits.forEach(u => { centroidX += u.x; centroidZ += u.z; });
+            centroidX /= mobileUnits.length;
+            centroidZ /= mobileUnits.length;
+            mobileUnits.forEach(u => {
+                u._formationOffset = { x: u.x - centroidX, z: u.z - centroidZ };
+            });
+            
+            let formationSpots = [];
+            if (!rightDragTargetEntity && mobileUnits.length > 1) {
+                const gx = Math.max(0, Math.min(299, Math.round(pt.x) + 150));
+                const gz = Math.max(0, Math.min(299, Math.round(pt.z) + 150));
+                const surfs = pathGrid[gz * 300 + gx];
+                const isOnWall = Math.abs(pt.y - getTerrainHeight(pt.x, pt.z)) > 2.0 && surfs && surfs.length > 0 && surfs.some(s => Math.abs(s - pt.y) < 1.5);
+                
+                if (isOnWall) {
+                    for (let i = 0; i < mobileUnits.length; i++) {
+                        formationSpots.push(pt.clone());
+                    }
+                }
+                
+                // If not enough wall spots (or we clicked the ground), fill remainder with ground honeycomb
+                if (formationSpots.length < mobileUnits.length) {
+                    const spacing = 1.05;
+                    const groundY = getTerrainHeight(pt.x, pt.z);
+                    let hexIndex = 1;
+                    
+                    // If no wall spots were found at all, the center point goes on the ground
+                    if (formationSpots.length === 0) {
+                        let centerPt = pt.clone();
+                        centerPt.y = groundY;
+                        formationSpots.push(centerPt);
+                    }
+                    
+                    while (formationSpots.length < mobileUnits.length) {
+                        let finalPt = pt.clone();
+                        let ring = 1;
+                        while (1 + 3 * ring * (ring + 1) <= hexIndex) ring++;
+                        const idxInRing = hexIndex - (1 + 3 * (ring - 1) * ring);
+                        const segment = Math.floor(idxInRing / ring);
+                        const step = idxInRing % ring;
+                        const corners = [[ring, 0], [0, ring], [-ring, ring], [-ring, 0], [0, -ring], [ring, -ring]];
+                        const dq = [-1, -1, 0, 1, 1, 0];
+                        const dr = [1, 0, -1, -1, 0, 1];
+                        const q = corners[segment][0] + step * dq[segment];
+                        const r = corners[segment][1] + step * dr[segment];
+                        
+                        finalPt.x += spacing * (q + r / 2);
+                        finalPt.z += spacing * (Math.sqrt(3) / 2) * r;
+                        finalPt.y = getTerrainHeight(finalPt.x, finalPt.z);
+                        
+                        // Ensure this ground spot isn't clipping inside the wall/keep footprint
+                        const gcx = Math.max(0, Math.min(299, Math.floor(finalPt.x) + 150));
+                        const gcz = Math.max(0, Math.min(299, Math.floor(finalPt.z) + 150));
+                        const cSurfs = pathGrid[gcz * 300 + gcx];
+                        const isBlocked = cSurfs && (cSurfs.isBuilding || cSurfs.isWall || cSurfs.length === 0);
+                        
+                        if (!isBlocked) {
+                            formationSpots.push(finalPt);
+                        }
+                        
+                        hexIndex++;
+                        if (hexIndex > 5000) break; // safety
+                    }
+                }
+            }
+            
+            const unassignedSpots = [...formationSpots];
+            mobileUnits.forEach(u => {
+                let bestIdx = -1;
+                let bestDist = Infinity;
+                for (let i = 0; i < unassignedSpots.length; i++) {
+                    const spot = unassignedSpots[i];
+                    const spotOffsetX = spot.x - pt.x;
+                    const spotOffsetZ = spot.z - pt.z;
+                    const dist = Math.hypot(u._formationOffset.x - spotOffsetX, u._formationOffset.z - spotOffsetZ);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = i;
+                    }
+                }
+                if (bestIdx !== -1) {
+                    u._assignedSpot = unassignedSpots[bestIdx];
+                    unassignedSpots.splice(bestIdx, 1);
+                } else {
+                    u._assignedSpot = pt.clone();
+                }
+            });
+            
+            mobileUnits.forEach((unit, uIdx) => {
                 let cmd = {
                     workerBuilding: null,
                     payloadResource: null,
@@ -10010,10 +11046,11 @@ function onMouseUp(e) {
                         cmd.state = "moving";
                     }
                 } else {
-                    cmd.targetPosition = pt.clone();
+                    let finalPt = unit._assignedSpot || pt.clone();
+                    cmd.targetPosition = finalPt;
                     if (rightDragFightMove) {
                         cmd.state = "fightmove";
-                        cmd.fightMoveDestination = pt.clone();
+                        cmd.fightMoveDestination = finalPt.clone();
                     } else {
                         cmd.state = "moving";
                     }
@@ -10074,7 +11111,7 @@ function onMouseUp(e) {
             -(dragStart.y / window.innerHeight) * 2 + 1
         );
         raycaster.setFromCamera(mouse, camera);
-        const checkMeshes = entities.filter(ent => ent.state !== "dead" && ent.mesh).map(ent => ent.mesh);
+        const checkMeshes = ((window.__activeUnits || entities).concat(window.__buildings || []).concat((window.__gameStateCache && window.__gameStateCache.trees) ? window.__gameStateCache.trees : [])).filter(ent => ent.state !== "dead" && ent.mesh).map(ent => ent.mesh);
         const intersects = raycaster.intersectObjects(checkMeshes, true).filter(h => !h.object.isCosmetic);
         if (intersects.length > 0) {
             let root = intersects[0].object;
@@ -10249,8 +11286,11 @@ function onKeyDown(e) {
             }
         }
     }
-    if (e.code === "Space" && !keysPressed["Space"]) {
-        spacebarScrolled = false;
+    if (e.code === "Space") {
+        e.preventDefault();
+        if (!keysPressed["Space"]) {
+            spacebarScrolled = false;
+        }
     }
     const selectBuildingHotkey = (type, name) => {
         const building = entities.find(ent => ent.type === type && ent.faction === "red" && ent.state !== "dead" && !ent.isPlanned);
@@ -10487,6 +11527,25 @@ function runAI(deltaTime) {
         }
     }
 }
+function dispatchUnitToCourtyardStaging(u) {
+    u.isWaveUnit = "building";
+    if (!window.__blueCastleSpawnTiles || window.__blueCastleSpawnTiles.length === 0) {
+        const blueKeep = (window.__gameStateCache ? window.__gameStateCache.blueKeep : null);
+        if (blueKeep) cacheBlueCastleSpawnTiles(blueKeep.x, blueKeep.z);
+    }
+    if (window.__blueCastleSpawnTiles && window.__blueCastleSpawnTiles.length > 0) {
+        const dest = window.__blueCastleSpawnTiles[Math.floor(Math.random() * window.__blueCastleSpawnTiles.length)];
+        u.targetEntity = null;
+        u.targetPosition = new THREE.Vector3(dest.x, getTerrainHeight(dest.x, dest.z), dest.z);
+        u.fightMoveDestination = u.targetPosition.clone();
+        u.state = "fightmove";
+        u.path = null;
+        u.pathCooldown = 0;
+    } else {
+        u.state = "idle";
+    }
+}
+
 function spawnHardBotUnit() {
     const blueKeep = (window.__gameStateCache ? window.__gameStateCache.blueKeep : null);
     if (!blueKeep) return;
@@ -10497,8 +11556,7 @@ function spawnHardBotUnit() {
         if (isSiege) {
             const types = ["siege_catapult", "siege_ballista", "siege_trebuchet", "siege_shield", "siege_mangonel"];
             const u = createEntity(types[Math.floor(Math.random() * types.length)], "blue", blueKeep.x + 8, blueKeep.z);
-            u.isWaveUnit = "building";
-            u.state = "idle";
+            dispatchUnitToCourtyardStaging(u);
         } else {
             const u = createEntity("soldier", "blue", blueKeep.x + 8, blueKeep.z);
             let config = { weapon: "Sword", armors: [], hasHorse: false };
@@ -10520,24 +11578,21 @@ function spawnHardBotUnit() {
             }
             if (Math.random() < 0.5) config.armors = [];
             applyEquipmentStats(u, config);
-            u.isWaveUnit = "building";
-            u.state = "idle";
+            dispatchUnitToCourtyardStaging(u);
         }
     } else {
         const rType = Math.random();
         if (rType < 0.05) {
             const types = ["siege_catapult", "siege_ballista", "siege_trebuchet", "siege_shield", "siege_mangonel"];
             const u = createEntity(types[Math.floor(Math.random() * types.length)], "blue", blueKeep.x + 8, blueKeep.z);
-            u.isWaveUnit = "building";
-            u.state = "idle";
+            dispatchUnitToCourtyardStaging(u);
         } else if (rType < 0.25) {
             const u = createEntity("soldier", "blue", blueKeep.x + 8, blueKeep.z);
             let config = { weapon: "Sword", armors: [], hasHorse: false };
             const mercenaries = ["Grunt", "Slinger", "Spy", "Thug", "Brute", "Assassin", "Doppelsoldner", "RoyalKnight"];
             config.weapon = mercenaries[Math.floor(Math.random() * mercenaries.length)];
             applyEquipmentStats(u, config);
-            u.isWaveUnit = "building";
-            u.state = "idle";
+            dispatchUnitToCourtyardStaging(u);
         } else {
             const u = createEntity("soldier", "blue", blueKeep.x + 8, blueKeep.z);
             let config = { weapon: "Sword", armors: [], hasHorse: false };
@@ -10553,11 +11608,110 @@ function spawnHardBotUnit() {
             if (config.weapon === "Short Bow") horseChance += 0.42;
             config.hasHorse = Math.random() < horseChance;
             applyEquipmentStats(u, config);
-            u.isWaveUnit = "building";
-            u.state = "idle";
+            dispatchUnitToCourtyardStaging(u);
         }
     }
 }
+
+function getWaveTargets() {
+    const redKeep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null) || 
+                    (window.__buildings ? window.__buildings.find(e => e.type === "keep" && e.faction === "red" && !e.isPlanned && e.state !== "dead") : entities.find(e => e.type === "keep" && e.faction === "red" && !e.isPlanned && e.state !== "dead"));
+    const srcList = window.__activeUnits || entities;
+    const redKing = srcList.find(e => e.type === "king" && e.faction === "red");
+    let furthestRedUnit = null;
+    let maxDist = -1;
+    let frontmostRanged = null;
+    let minDist = Infinity;
+    const redPeasants = [];
+
+    for (let i = 0; i < srcList.length; i++) {
+        const e = srcList[i];
+        if (e.state === "dead" || !e.mesh || !e.mesh.visible) continue;
+        if (e.faction === "red") {
+            if (e.type === "peasant") redPeasants.push(e);
+            if (redKeep && (e.type === "military" || e.type === "peasant" || e.type === "soldier")) {
+                const d = Math.hypot(e.x - redKeep.x, e.z - redKeep.z);
+                if (d > maxDist) { maxDist = d; furthestRedUnit = e; }
+            }
+        } else if (e.faction === "blue") {
+            if (redKeep && (e.weapon === "Short Bow" || e.weapon === "Longbow" || e.weapon === "Crossbow")) {
+                const d = Math.hypot(e.x - redKeep.x, e.z - redKeep.z);
+                if (d < minDist) { minDist = d; frontmostRanged = e; }
+            }
+        }
+    }
+    return { redKeep, redKing, furthestRedUnit, frontmostRanged, redPeasants };
+}
+
+function assignWaveUnitTarget(u, targets) {
+    if (!targets) targets = getWaveTargets();
+    const { redKeep, redKing, furthestRedUnit, frontmostRanged, redPeasants } = targets;
+    const blueKeep = (window.__gameStateCache ? window.__gameStateCache.blueKeep : null);
+    let target = null;
+    if (u.hasHorse && redKeep) {
+        if (!u.flankPoint && blueKeep) {
+            const isTop = Math.random() < 0.5;
+            if (isTop) {
+                u.flankPoint = new THREE.Vector3(blueKeep.x, getTerrainHeight(blueKeep.x, redKeep.z - 30), redKeep.z - 30);
+            } else {
+                u.flankPoint = new THREE.Vector3(redKeep.x - 30, getTerrainHeight(redKeep.x - 30, blueKeep.z), blueKeep.z);
+            }
+        }
+        if (u.flankPoint && !u.flankReached) {
+            const distToFlank = Math.hypot(u.x - u.flankPoint.x, u.z - u.flankPoint.z);
+            if (distToFlank > 15.0) {
+                target = u.flankPoint;
+            } else {
+                u.flankReached = true;
+            }
+        }
+        if (!target || u.flankReached) {
+            target = furthestRedUnit;
+        }
+    } else if (u.type === "siege_catapult" || u.type === "siege_trebuchet" || u.type === "siege_ballista" || u.type === "siege_mangonel") {
+        target = redKeep;
+    } else if (u.type === "siege_shield" && redKeep) {
+        if (frontmostRanged) {
+            const dirX = redKeep.x - frontmostRanged.x;
+            const dirZ = redKeep.z - frontmostRanged.z;
+            const len = Math.hypot(dirX, dirZ);
+            if (len > 0.1) {
+                const pushDist = 3.0; // Place shield 3 units in front
+                u.targetEntity = null;
+                u.targetPosition = new THREE.Vector3(
+                    frontmostRanged.x + (dirX / len) * pushDist,
+                    frontmostRanged.y,
+                    frontmostRanged.z + (dirZ / len) * pushDist
+                );
+                u.fightMoveDestination = u.targetPosition.clone();
+                u.state = "fightmove";
+                u.path = null;
+                u.pathCooldown = 0;
+                return; // Skip standard target assignment
+            }
+        }
+        target = redKeep;
+    } else if (u.weapon === "Sword") {
+        if (redPeasants.length > 0) {
+            target = redPeasants[Math.floor(Math.random() * redPeasants.length)];
+        }
+    }
+    if (!target) target = redKeep || redKing;
+    if (target) {
+        u.targetEntity = null; // Free up targetEntity so handleCombat can auto-acquire from max range
+        u.targetPosition = new THREE.Vector3(target.x, target.y, target.z);
+        u.fightMoveDestination = u.targetPosition.clone();
+        u.state = "fightmove";
+        u.path = null;
+        u.pathCooldown = 0;
+        if (target === redKeep && u.weapon !== "Assassin" && !u.hasHorse) {
+            u.useFlowfield = "redKeep";
+        } else {
+            u.useFlowfield = null;
+        }
+    }
+}
+
 function runHardModeAI(deltaTime) {
     if (isGameOver) return;
 
@@ -10571,20 +11725,23 @@ function runHardModeAI(deltaTime) {
         }
     }
 
-    // Wave Spawning
+    // Wave Spawning Trigger
     hardBotWaveTimer -= deltaTime;
     if (hardBotWaveTimer <= 0) {
         hardBotWaveTimer = gameDifficulty === "easy" ? 120.0 : 60.0;
         
+        // Enqueue staging units for staggered 1-unit-per-frame release
+        waveReleaseQueue = [];
         entities.forEach(u => {
-            if (u.faction === "blue" && u.isWaveUnit === "building") {
-                u.isWaveUnit = true;
+            if (u.faction === "blue" && u.state !== "dead" && u.isWaveUnit === "building") {
+                waveReleaseQueue.push(u);
             }
         });
+        cachedWaveTargets = getWaveTargets();
         
         pendingHardBotSpawns = hardBotWaveCount;
         hardBotSpawnTimer = 0;
-        hardBotAiTimer = 0;
+        hardBotAiTimer = 10.0 + Math.random() * 10.0;
 
         if (gameDifficulty === "medium" || gameDifficulty === "easy") {
             hardBotWaveCount += 1;
@@ -10593,91 +11750,27 @@ function runHardModeAI(deltaTime) {
         }
         showStatusLog("A hostile wave is approaching!", "warning");
     }
-    // AI Targeting Logic
+
+    // Staggered Wave Release: 1 unit per frame
+    if (waveReleaseQueue.length > 0) {
+        const u = waveReleaseQueue.shift();
+        if (u && u.state !== "dead" && u.mesh && u.mesh.visible) {
+            u.isWaveUnit = true;
+            if (!cachedWaveTargets || (gameFrameCount % 60 === 0)) {
+                cachedWaveTargets = getWaveTargets();
+            }
+            assignWaveUnitTarget(u, cachedWaveTargets);
+        }
+    }
+
+    // AI Periodic Retargeting Logic
     hardBotAiTimer -= deltaTime;
     if (hardBotAiTimer <= 0) {
         hardBotAiTimer = 10.0 + Math.random() * 10.0;
-        const redKeep = (window.__gameStateCache ? window.__gameStateCache.redKeep : null);
+        cachedWaveTargets = getWaveTargets();
         entities.forEach(u => {
-            if (u.faction === "blue" && u.state !== "dead" && u.isWaveUnit !== "building" && (u.isWaveUnit === true || u.type.startsWith("siege_"))) {
-                let target = null;
-                if (u.hasHorse && redKeep) {
-                    const blueKeep = (window.__gameStateCache ? window.__gameStateCache.blueKeep : null);
-                    if (!u.flankPoint && blueKeep) {
-                        const isTop = Math.random() < 0.5;
-                        if (isTop) {
-                            u.flankPoint = new THREE.Vector3(blueKeep.x, getTerrainHeight(blueKeep.x, redKeep.z - 30), redKeep.z - 30);
-                        } else {
-                            u.flankPoint = new THREE.Vector3(redKeep.x - 30, getTerrainHeight(redKeep.x - 30, blueKeep.z), blueKeep.z);
-                        }
-                    }
-                    if (u.flankPoint && !u.flankReached) {
-                        const distToFlank = Math.hypot(u.x - u.flankPoint.x, u.z - u.flankPoint.z);
-                        if (distToFlank > 15.0) {
-                            target = u.flankPoint;
-                        } else {
-                            u.flankReached = true;
-                        }
-                    }
-                    if (!target || u.flankReached) {
-                        // Furthest unit from redKeep
-                        let maxDist = -1;
-                        entities.forEach(e => {
-                            if (e.faction === "red" && e.state !== "dead" && (e.type === "military" || e.type === "peasant" || e.type === "soldier")) {
-                                const d = Math.hypot(e.x - redKeep.x, e.z - redKeep.z);
-                                if (d > maxDist) { maxDist = d; target = e; }
-                            }
-                        });
-                    }
-                } else if (u.weapon === "Mace") {
-                    // Walls or buildings
-                    const bldgs = entities.filter(e => e.faction === "red" && e.state !== "dead" && (e.type === "wall_column" || e.type === "gatehouse" || e.type === "house" || e.type === "barracks"));
-                    if (bldgs.length > 0) target = bldgs[Math.floor(Math.random() * bldgs.length)];
-                } else if (u.type === "siege_catapult" || u.type === "siege_trebuchet" || u.type === "siege_ballista" || u.type === "siege_mangonel") {
-                    target = redKeep;
-                } else if (u.type === "siege_shield" && redKeep) {
-                    let frontmostRanged = null;
-                    let minDist = Infinity;
-                    entities.forEach(e => {
-                        if (e.faction === "blue" && e.state !== "dead" && (e.weapon === "Short Bow" || e.weapon === "Longbow" || e.weapon === "Crossbow")) {
-                            const d = Math.hypot(e.x - redKeep.x, e.z - redKeep.z);
-                            if (d < minDist) { minDist = d; frontmostRanged = e; }
-                        }
-                    });
-                    if (frontmostRanged) {
-                        const dirX = redKeep.x - frontmostRanged.x;
-                        const dirZ = redKeep.z - frontmostRanged.z;
-                        const len = Math.hypot(dirX, dirZ);
-                        if (len > 0.1) {
-                            const pushDist = 3.0; // Place shield 3 units in front
-                            u.targetEntity = null;
-                            u.targetPosition = new THREE.Vector3(
-                                frontmostRanged.x + (dirX/len)*pushDist,
-                                frontmostRanged.y,
-                                frontmostRanged.z + (dirZ/len)*pushDist
-                            );
-                            u.fightMoveDestination = u.targetPosition.clone();
-                            u.state = "fightmove";
-                            u.path = null;
-                            u.pathCooldown = 0;
-                            return; // Skip standard target assignment
-                        }
-                    }
-                    target = redKeep;
-                } else if (u.weapon === "Sword") {
-                    // Peasants
-                    const peas = entities.filter(e => e.faction === "red" && e.state !== "dead" && e.type === "peasant");
-                    if (peas.length > 0) target = peas[Math.floor(Math.random() * peas.length)];
-                }
-                if (!target) target = entities.find(e => e.type === "king" && e.faction === "red");
-                if (target) {
-                    u.targetEntity = null; // Free up targetEntity so handleCombat can auto-acquire from max range
-                    u.targetPosition = new THREE.Vector3(target.x, target.y, target.z);
-                    u.fightMoveDestination = u.targetPosition.clone();
-                    u.state = "fightmove";
-                    u.path = null;
-                    u.pathCooldown = 0;
-                }
+            if (u.faction === "blue" && u.state !== "dead" && u.isWaveUnit !== "building" && (u.isWaveUnit === true || (u.type && u.type.startsWith("siege_")))) {
+                assignWaveUnitTarget(u, cachedWaveTargets);
             }
         });
     }
@@ -10955,7 +12048,7 @@ function toggleAggro() {
         if ((ent.baseSpeed > 0 || ent.speed > 0 || ent.type === "peasant") && ent.faction === "red") {
             if (ent.isAggro) aggroOnCount++;
             else aggroOffCount++;
-                if (ent.type === "soldier" && ent.weapon === "RoyalKnight") {
+                if ((ent.type === "soldier" && ent.weapon === "RoyalKnight") || ent.type === "king") {
                     rkCount++;
                     if (ent.hasHorse) rkMountedCount++;
                 }
@@ -10993,11 +12086,13 @@ window.applyZzzTint = function(b, isZzz) {
         if (c.isMesh && c.material) {
             if (isZzz) {
                 if (c.material.emissive) {
+                    makeMaterialUnique(c);
                     if (c.material.origEmissive === undefined) c.material.origEmissive = c.material.emissive.getHex();
                     c.material.emissive.setHex(0x0055cc); // Blue tint
                 }
             } else {
                 if (c.material.emissive && c.material.origEmissive !== undefined) {
+                    makeMaterialUnique(c);
                     c.material.emissive.setHex(c.material.origEmissive);
                 }
             }
@@ -11055,7 +12150,7 @@ window.toggleZzz = function() {
             // If loadhouse, remove horse mesh if it exists
             if (b.type === "loadhouse" && b.hasHorse) {
                 b.hasHorse = false;
-                if (b.mesh) scene.remove(b.mesh);
+                if (b.mesh) { scene.remove(b.mesh); disposeHierarchy(b.mesh); }
                 b.mesh = buildEntityMesh(b); scene.add(b.mesh); b.mesh.position.set(b.x, b.y, b.z);
             }
         }
@@ -11120,6 +12215,7 @@ function getWeaponSVG(w) {
     return WEAPON_SVGS[w] || `<svg class="weapon-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#cfd8dc" stroke="#90a4ae" stroke-width="1"/></svg>`;
 }
 function updateSelectionHUD() {
+    const bldgFinePrint = document.getElementById("building-drag-fine-print");
     const btnAttackGround = document.getElementById("btn-attack-ground");
     if (btnAttackGround) {
         if (selectedEntities.some(ent => ent.faction === "red" && (
@@ -11181,7 +12277,11 @@ function updateSelectionHUD() {
         const actionHeaderTitle = document.querySelector(".action-header h3");
         const finePrint = document.getElementById("market-fine-print");
         if (finePrint) finePrint.style.display = "none";
+        if (bldgFinePrint) bldgFinePrint.style.display = "inline";
         if (defaultTabs) defaultTabs.style.display = "flex";
+        const multiUnitContainer = document.getElementById("multi-unit-header-container");
+        if (multiUnitContainer) multiUnitContainer.style.display = "none";
+        window.activeMultiUnitTab = "all";
         if (barHeader) barHeader.style.display = "none";
         if (siegeHeader) siegeHeader.style.display = "none";
         if (mktHeader) mktHeader.style.display = "none";
@@ -11224,6 +12324,9 @@ function updateSelectionHUD() {
     const actionHeaderTitle = document.querySelector(".action-header h3");
         const finePrint = document.getElementById("market-fine-print");
         if (finePrint) finePrint.style.display = "none";
+        if (bldgFinePrint) bldgFinePrint.style.display = "inline";
+        const multiUnitContainer = document.getElementById("multi-unit-header-container");
+        if (multiUnitContainer) multiUnitContainer.style.display = "none";
     if (defaultTabs) defaultTabs.style.display = "flex";
     if (barHeader) barHeader.style.display = "none";
     if (siegeHeader) siegeHeader.style.display = "none";
@@ -11251,6 +12354,8 @@ function updateSelectionHUD() {
     // Toggle conditional control segments on Barracks or Workshops
     if (selectedEntities.length > 1 && !isMultiSameBuilding) {
         if (defaultTabs) defaultTabs.style.display = "none";
+        const multiUnitContainer = document.getElementById("multi-unit-header-container");
+        if (multiUnitContainer) multiUnitContainer.style.display = "flex";
         if (mktHeader) mktHeader.style.display = "none";
         if (actionHeaderTitle) actionHeaderTitle.innerText = "Multi-Selection";
         if (groupCiv) groupCiv.style.display = "none";
@@ -11260,9 +12365,49 @@ function updateSelectionHUD() {
         if (groupLuxuries) groupLuxuries.style.display = "none";
         if (groupMultiUnits) {
             groupMultiUnits.style.display = "flex";
-            // Build the multi-selection content
-            let weaponCounts = {};
+
+            window.activeMultiUnitTab = window.activeMultiUnitTab || "all";
+            
+            // Calculate live counts for each category
+            let counts = { all: selectedEntities.length, melee: 0, ranged: 0, cavalry: 0, siege: 0 };
             selectedEntities.forEach(ent => {
+                if (isUnitInTypeCategory(ent, "melee")) counts.melee++;
+                if (isUnitInTypeCategory(ent, "ranged")) counts.ranged++;
+                if (isUnitInTypeCategory(ent, "cavalry")) counts.cavalry++;
+                if (isUnitInTypeCategory(ent, "siege")) counts.siege++;
+            });
+
+            // Update tab badges & active states
+            const tabKeys = ["all", "melee", "ranged", "cavalry", "siege"];
+            tabKeys.forEach(tKey => {
+                const countEl = document.getElementById("count-unit-" + tKey);
+                if (countEl) countEl.innerText = counts[tKey];
+                const btnEl = document.getElementById("tab-unit-" + tKey);
+                if (btnEl) {
+                    if (counts[tKey] === 0) {
+                        btnEl.classList.add("disabled-tab");
+                    } else {
+                        btnEl.classList.remove("disabled-tab");
+                    }
+                    if (window.activeMultiUnitTab === tKey) {
+                        btnEl.classList.add("active");
+                    } else {
+                        btnEl.classList.remove("active");
+                    }
+                }
+            });
+
+            // If active tab has 0 units, fall back to 'all'
+            if (counts[window.activeMultiUnitTab] === 0) {
+                window.activeMultiUnitTab = "all";
+                const allBtn = document.getElementById("tab-unit-all");
+                if (allBtn) allBtn.classList.add("active");
+            }
+
+            // Build the multi-selection content filtered by current tab
+            const filteredUnits = selectedEntities.filter(ent => isUnitInTypeCategory(ent, window.activeMultiUnitTab));
+            let weaponCounts = {};
+            filteredUnits.forEach(ent => {
                 let w = ent.weapon || (ent.type === "peasant" ? "Peasant" : (ent.type === "king" ? "King" : ent.type));
                 if (w === "siege_shield") w = "Shield";
                 if (w === "siege_ballista") w = "Ballista";
@@ -11562,6 +12707,7 @@ function updateSelectionHUD() {
     if (displayType === "siege_ballista") displayType = "Ballista";
     if (displayType === "siege_catapult") displayType = "Catapult";
     if (displayType === "siege_trebuchet") displayType = "Trebuchet";
+    if (first.isWagon) displayType = "Loadhouse Wagon";
     let titleStr = displayType.toUpperCase() + " (" + first.faction.toUpperCase() + ")";
     if (first.type === "soldier") {
         let soldierName = "SOLDIER";
@@ -11623,7 +12769,7 @@ function updateSelectionHUD() {
                 hasMobiles = true;
                 if (ent.isAggro) aggroOnCount++;
                 else aggroOffCount++;
-                if (ent.type === "soldier" && ent.weapon === "RoyalKnight") {
+                if ((ent.type === "soldier" && ent.weapon === "RoyalKnight") || ent.type === "king") {
                     rkCount++;
                     if (ent.hasHorse) rkMountedCount++;
                 }
@@ -11747,7 +12893,23 @@ function updateSelectionHUD() {
             let displayState = first.state.toUpperCase();
             if (first.type === "peasant" && first.state === "wander") displayState = "IDLE";
             detailsHtml += `<div class="stat-row"><span>Current Action:</span><span>${displayState}</span></div>`;
-            if (first.payloadAmount > 0) {
+            if (first.isWagon && first.wagon) {
+                const totalWagonGoods = Object.values(first.wagon).reduce((sum, val) => sum + val, 0);
+                detailsHtml += `<div class="stat-row"><span>Wagon Cargo:</span><span>${totalWagonGoods}/200</span></div>`;
+                let cargoBreakdown = [];
+                for (let [item, amt] of Object.entries(first.wagon)) {
+                    if (amt > 0) cargoBreakdown.push(`${amt} ${item}`);
+                }
+                if (cargoBreakdown.length > 0) {
+                    detailsHtml += `<div class="stat-row" style="font-size:11px; color:#bbb;"><span>Contents:</span><span style="text-align:right; max-width:65%; word-break:break-word;">${cargoBreakdown.join(", ")}</span></div>`;
+                }
+            } else if (first.disbandGoods) {
+                let items = [];
+                if (first.disbandGoods.weapon) items.push(first.disbandGoods.weapon);
+                if (first.disbandGoods.armors && first.disbandGoods.armors.length > 0) items.push(...first.disbandGoods.armors);
+                if (first.disbandGoods.hasHorse) items.push("Horse");
+                detailsHtml += `<div class="stat-row"><span>Returning Gear:</span><span style="font-size:11px; color:#bbb;">${items.join(", ")}</span></div>`;
+            } else if (first.payloadAmount > 0) {
                 detailsHtml += `<div class="stat-row"><span>Carrying:</span><span>${first.payloadAmount} ${(first.payloadResource || "Wood").toUpperCase()}</span></div>`;
             } else if (first.intendedFetchAmount > 0 && first.state === "constructing_fetching") {
                 detailsHtml += `<div class="stat-row"><span>Fetching:</span><span>${first.intendedFetchAmount} ${(first.payloadResource || "Wood").toUpperCase()}</span></div>`;
@@ -11774,6 +12936,9 @@ function updateSelectionHUD() {
             }
             if (first.type === "gatehouse" || first.type === "keep") {
                 const mode = first.gateMode || "AUTO";
+                if (first.type === "gatehouse" && first.isZzz) {
+                    detailsHtml += `<div class="stat-row" style="color: #ff6b6b; font-weight: bold;"><span>Gate Status:</span><span>⚠️ CONTESTED (OFF)</span></div>`;
+                }
                 detailsHtml += `
                     <div style="margin-top: 10px; display: flex; gap: 5px;">
                         <button onmousedown="toggleGatehouse(${first.id}, 'AUTO')" style="flex:1; padding:5px; background: ${mode === 'AUTO' ? '#2196f3' : '#333'};">AUTO</button>
@@ -11949,6 +13114,10 @@ function updateSelectionHUD() {
             `;
         }
     }
+    if (bldgFinePrint) {
+        const defaultTabs = document.getElementById("default-header-tabs");
+        bldgFinePrint.style.display = (defaultTabs && defaultTabs.style.display !== "none") ? "inline" : "none";
+    }
 }
 function showStatusLog(message, type = "normal") {
     const el = document.getElementById("game-status-text");
@@ -12007,6 +13176,77 @@ window.filterSelectionByArmor = function(e, aStr) {
     });
     updateSelectionHUD();
 };
+
+window.isUnitInTypeCategory = function(ent, category) {
+    if (category === "all") return true;
+    const isSiege = (ent.type && ent.type.startsWith("siege_")) || 
+                    ["Catapult", "Trebuchet", "Ballista", "Mangonel", "Shield", "siege_shield", "siege_catapult", "siege_trebuchet", "siege_ballista", "siege_mangonel"].includes(ent.weapon);
+    if (category === "siege") return isSiege;
+    if (isSiege) return false;
+
+    const isCavalry = ent.hasHorse === true || ent.type === "cavalry" || ent.weapon === "RoyalKnight";
+    if (category === "cavalry") return isCavalry;
+
+    const isRanged = ["Short Bow", "Longbow", "Crossbow", "Slinger"].includes(ent.weapon) || 
+                    (WEAPONS[ent.weapon] && (WEAPONS[ent.weapon].type === "bow" || WEAPONS[ent.weapon].type === "crossbow"));
+    if (category === "ranged") return isRanged;
+
+    if (category === "melee") {
+        return !isRanged;
+    }
+    return true;
+};
+
+let lastTabClickTime = 0;
+let lastTabClicked = null;
+
+window.handleMultiUnitTabClick = function(e, category) {
+    if (e) e.stopPropagation();
+    const now = Date.now();
+    const isDouble = (lastTabClicked === category && now - lastTabClickTime < 350);
+    lastTabClickTime = now;
+    lastTabClicked = category;
+
+    if (e && (e.shiftKey || isDouble)) {
+        // Isolate this category
+        selectedEntities = selectedEntities.filter(ent => isUnitInTypeCategory(ent, category));
+        entities.forEach(ent => {
+            if (ent.selectionRing) {
+                ent.selectionRing.visible = selectedEntities.includes(ent);
+            }
+        });
+        window.activeMultiUnitTab = "all";
+        updateSelectionHUD();
+        return;
+    }
+
+    window.activeMultiUnitTab = category;
+    updateSelectionHUD();
+};
+
+window.deselectUnitCategory = function(e, category) {
+    if (e) e.stopPropagation();
+    if (category === "all") {
+        selectedEntities = [];
+    } else {
+        selectedEntities = selectedEntities.filter(ent => !isUnitInTypeCategory(ent, category));
+    }
+    entities.forEach(ent => {
+        if (ent.selectionRing) {
+            ent.selectionRing.visible = selectedEntities.includes(ent);
+        }
+    });
+    updateSelectionHUD();
+};
+
+window.setAllArmorCheckboxes = function(checked) {
+    const ids = ["chk-cloth", "chk-leather", "chk-chain", "chk-plate", "chk-horse"];
+    ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = checked;
+    });
+};
+
 window.cancelPlannedBuilding = function(id) {
     let ent = entities.find(e => e.id === id);
     if (ent && ent.type === "tower_tile" && ent.parentId) {
@@ -12056,18 +13296,49 @@ function endGame(winner) {
     }
 }
 function restartGame() {
+    if (typeof unreachableClearInterval !== 'undefined') {
+        clearInterval(unreachableClearInterval);
+    }
+    unreachableClearInterval = setInterval(() => {
+        entities.forEach(e => {
+            if (e.isUnreachable) {
+                e.isUnreachable = false;
+                if (e.mesh) {
+                    e.mesh.traverse(c => {
+                        if (c.isMesh && c.material) {
+                            if (e.isPlanned && c.material.color) { makeMaterialUnique(c); c.material.color.setHex(0x00ff00); }
+                            else if (e.isZzz && window.applyZzzTint) {
+                                window.applyZzzTint(e, true);
+                            }
+                            else if (c.material.emissive && c.material.origEmissive !== undefined) {
+                                makeMaterialUnique(c);
+                                c.material.emissive.setHex(c.material.origEmissive);
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }, 3000);
     entities.forEach(ent => {
-        if (ent.mesh) scene.remove(ent.mesh);
-        if (ent.healthBar) scene.remove(ent.healthBar);
+        if (ent.mesh) { scene.remove(ent.mesh); disposeHierarchy(ent.mesh); }
+        if (ent.healthBar) {
+            scene.remove(ent.healthBar);
+            if (ent.healthBar.material) {
+                if (ent.healthBar.material.map) ent.healthBar.material.map.dispose();
+                ent.healthBar.material.dispose();
+            }
+            if (ent.healthTexture) ent.healthTexture.dispose();
+        }
     });
     projectiles.forEach(p => {
-        if (p.mesh) scene.remove(p.mesh);
+        if (p.mesh) { scene.remove(p.mesh); disposeHierarchy(p.mesh); }
     });
     particleEffects.forEach(p => {
-        if (p.mesh) scene.remove(p.mesh);
+        if (p.mesh) { scene.remove(p.mesh); disposeHierarchy(p.mesh); }
         if (p.parts && Array.isArray(p.parts)) {
             p.parts.forEach(part => {
-                if (part && part.mesh) scene.remove(part.mesh);
+                if (part && part.mesh) { scene.remove(part.mesh); disposeHierarchy(part.mesh); }
             });
         }
     });
@@ -12093,6 +13364,8 @@ function restartGame() {
     globalGameTime = 0;
     hardBotWaveTimer = 60.0;
     hardBotAiTimer = 10.0;
+    waveReleaseQueue = [];
+    cachedWaveTargets = null;
     globalFoodTimer = 20.0;
     starvationTimer = 1.0;
     cancelPlacement();
@@ -12175,6 +13448,35 @@ function generateMinimapTerrain(w, h) {
     ctx.putImageData(imgData, 0, 0);
 }
 
+function generateMinimapStatic(ctx, w, h) {
+    if (typeof resourceDeposits !== "undefined") {
+        for (let i = 0; i < resourceDeposits.length; i++) {
+            let dep = resourceDeposits[i];
+            let cx = ((dep.x + 150) / 300) * w;
+            let cz = ((dep.z + 150) / 300) * h;
+            let r = (dep.radius / 300) * w;
+            if (dep.type === "fertile") ctx.fillStyle = "rgba(56, 142, 60, 0.6)";
+            else if (dep.type === "iron") ctx.fillStyle = "rgba(126, 87, 194, 0.8)";
+            else if (dep.type === "stone") ctx.fillStyle = "rgba(120, 144, 156, 0.8)";
+            else if (dep.type === "gold") ctx.fillStyle = "rgba(255, 179, 0, 0.8)";
+            else ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
+            ctx.beginPath();
+            ctx.arc(cx, cz, Math.max(1, r), 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    const treeList = (window.__gameStateCache && window.__gameStateCache.trees) ? window.__gameStateCache.trees : entities;
+    for (let i = 0; i < treeList.length; i++) {
+        let e = treeList[i];
+        if (e.type === "tree" && e.state !== "dead") {
+            let cx = ((e.x + 150) / 300) * w;
+            let cz = ((e.z + 150) / 300) * h;
+            ctx.fillStyle = "rgba(34, 139, 34, 0.8)";
+            ctx.fillRect(cx - 1, cz - 1, 2, 2);
+        }
+    }
+}
+
 function drawMinimap() {
     const canvas = document.getElementById("minimap");
     if (!canvas) return;
@@ -12182,42 +13484,24 @@ function drawMinimap() {
     const w = canvas.width;
     const h = canvas.height;
     
-    if (!minimapBgCanvas) {
+    if (!minimapBgCanvas || window.minimapBgDirty) {
         generateMinimapTerrain(w, h);
+        generateMinimapStatic(minimapBgCanvas.getContext("2d"), w, h);
+        window.minimapBgDirty = false;
     }
     
     ctx.drawImage(minimapBgCanvas, 0, 0);
     
-    if (typeof resourceDeposits !== "undefined") {
-        for (let i = 0; i < resourceDeposits.length; i++) {
-            let dep = resourceDeposits[i];
-            let cx = ((dep.x + 150) / 300) * w;
-            let cz = ((dep.z + 150) / 300) * h;
-            let r = (dep.radius / 300) * w;
+    const renderEntities = (list) => {
+        if (!list) return;
+        for (let i = 0; i < list.length; i++) {
+            let e = list[i];
+            if (e.state === "dead" || e.isPlanned || e.type === "tree") continue;
             
-            if (dep.type === "fertile") ctx.fillStyle = "rgba(56, 142, 60, 0.6)";
-            else if (dep.type === "iron") ctx.fillStyle = "rgba(126, 87, 194, 0.8)";
-            else if (dep.type === "stone") ctx.fillStyle = "rgba(120, 144, 156, 0.8)";
-            else if (dep.type === "gold") ctx.fillStyle = "rgba(255, 179, 0, 0.8)";
-            else ctx.fillStyle = "rgba(200, 200, 200, 0.5)";
+            let cx = ((e.x + 150) / 300) * w;
+            let cz = ((e.z + 150) / 300) * h;
             
-            ctx.beginPath();
-            ctx.arc(cx, cz, Math.max(1, r), 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }
-    
-    for (let i = 0; i < entities.length; i++) {
-        let e = entities[i];
-        if (e.state === "dead" || e.isPlanned) continue;
-        
-        let cx = ((e.x + 150) / 300) * w;
-        let cz = ((e.z + 150) / 300) * h;
-        
-        if (e.type === "tree") {
-            ctx.fillStyle = "rgba(34, 139, 34, 0.8)";
-            ctx.fillRect(cx - 1, cz - 1, 2, 2);
-        } else if (e.type === "peasant" || e.type === "soldier" || e.type === "king" || (e.type && e.type.startsWith("siege_"))) {
+            if (e.type === "peasant" || e.type === "soldier" || e.type === "king" || (e.type && e.type.startsWith("siege_"))) {
             ctx.fillStyle = e.faction === "red" ? "#ff4444" : "#4444ff";
             if (e.type === "king") ctx.fillStyle = "yellow";
             ctx.beginPath();
@@ -12230,6 +13514,9 @@ function drawMinimap() {
             ctx.fillRect(cx - bw/2, cz - bh/2, bw, bh);
         }
     }
+    }; // Close renderEntities
+    renderEntities(window.__activeUnits);
+    renderEntities(window.__buildings);
     
     if (typeof cameraLookAt !== "undefined") {
         let camX = ((cameraLookAt.x + 150) / 300) * w;
@@ -12263,8 +13550,15 @@ function gameLoop(timestamp) {
     lastTime = timestamp;
     window.pathNodesEvaluatedThisFrame = 0;
     globalGameTime += deltaTime;
-    const timerEl = document.getElementById("game-timer");
-    if (timerEl) timerEl.innerText = formatGameTime(globalGameTime);
+    if (!window.__timerEl) window.__timerEl = document.getElementById("game-timer");
+    const timerEl = window.__timerEl;
+    if (timerEl) {
+        const newTimeStr = formatGameTime(globalGameTime);
+        if (window.__lastTimeStr !== newTimeStr) {
+            timerEl.innerText = newTimeStr;
+            window.__lastTimeStr = newTimeStr;
+        }
+    }
     if (window.uiNeedsUpdate) {
         forceUpdateUI();
         window.uiNeedsUpdate = false;
@@ -12272,9 +13566,21 @@ function gameLoop(timestamp) {
     handleCameraMovement(deltaTime);
     if (needsPathGridUpdate) {
         updatePathGrid();
-        updateRegionGrid();
         needsPathGridUpdate = false;
     }
+    if (needsRegionGridUpdate) {
+        updateRegionGrid();
+        needsRegionGridUpdate = false;
+    }
+    if (!window.__activeUnits) window.__activeUnits = [];
+    if (!window.__combatants) window.__combatants = [];
+    if (!window.__buildings) window.__buildings = [];
+    if (!window.__activeShields) window.__activeShields = [];
+    let activeUnits = window.__activeUnits;
+    let combatants = window.__combatants;
+    let buildings = window.__buildings;
+    let activeShields = window.__activeShields;
+
     if (!isGameOver) {
         if (gameFrameCount % 30 === 0) handleSpawning(deltaTime * 30);
         window.autoTradeTimer = (window.autoTradeTimer || 0) + deltaTime;
@@ -12295,20 +13601,24 @@ function gameLoop(timestamp) {
                 }
             });
         }
-        // Preallocated global arrays for gameLoop
-        if (!window.__activeUnits) window.__activeUnits = [];
-        if (!window.__combatants) window.__combatants = [];
-        if (!window.__buildings) window.__buildings = [];
-        if (!window.__activeShields) window.__activeShields = [];
+        
         window.__activeUnits.length = 0;
         window.__combatants.length = 0;
         window.__buildings.length = 0;
         window.__activeShields.length = 0;
-        let activeUnits = window.__activeUnits;
-        let combatants = window.__combatants;
-        let buildings = window.__buildings;
-        let activeShields = window.__activeShields;
+        
         entities.forEach(e => {
+            if (e.mesh && e.state !== "dead" && !e.isPlanned && e.baseSpeed === 0 && e.type !== "projectile" && !e.mesh.userData.isStaticMatrixApplied) {
+                e.mesh.updateMatrixWorld(true);
+                e.mesh.matrixAutoUpdate = false;
+                e.mesh.traverse(child => {
+                    if (child.isMesh || child.isGroup) {
+                        child.matrixAutoUpdate = false;
+                        child.updateMatrixWorld(true);
+                    }
+                });
+                e.mesh.userData.isStaticMatrixApplied = true;
+            }
             if (e.state !== "dead" && e.state !== "siege_pilot") {
                 if (e.type === "king" || (e.type === "soldier" && e.weapon === "RoyalKnight")) {
                     if (e.healCooldown > 0) {
@@ -12340,16 +13650,19 @@ function gameLoop(timestamp) {
             redKeep: null, blueKeep: null,
             redHouses: [], blueHouses: [],
             redBarracks: [], blueBarracks: [],
-            stables: [], plannedBuildings: []
+            stables: [], plannedBuildings: [], trees: []
         };
         const gsc = window.__gameStateCache;
         gsc.redKeep = null; gsc.blueKeep = null;
         gsc.redHouses.length = 0; gsc.blueHouses.length = 0;
         gsc.redBarracks.length = 0; gsc.blueBarracks.length = 0;
-        gsc.stables.length = 0; gsc.plannedBuildings.length = 0;
+        gsc.stables.length = 0; gsc.plannedBuildings.length = 0; gsc.trees.length = 0;
         
         for (let i = 0; i < buildings.length; i++) {
             const e = buildings[i];
+            if (e.type === "tree" && e.state !== "dead") {
+                gsc.trees.push(e);
+            }
             if (e.isPlanned) {
                 gsc.plannedBuildings.push(e);
                 continue;
@@ -12368,13 +13681,14 @@ function gameLoop(timestamp) {
             }
         }
         
-        entities.forEach(e => {
-            if (e.type === "peasant" && e.state === "wander") {
+        activeUnits.forEach(e => {
+            if (e.type === "peasant" && (e.state === "wander" || e.state === "idle")) {
+                if (e.state === "idle" && !e.targetPosition) e.state = "wander";
                 handlePeasantWander(e, deltaTime);
             }
             if (e.state === "help" && e.helpTarget) {
                 if (e.helpTarget.state === "dead") {
-                    e.state = "idle";
+                    e.state = (e.type === "peasant") ? "wander" : "idle";
                     e.helpTarget = null;
                     e.savedHelpTarget = null;
                     e.path = null;
@@ -12605,6 +13919,8 @@ function gameLoop(timestamp) {
         });
         
         if (moveMarkersLine) {
+            moveMarkersLine.geometry.dispose();
+            moveMarkersLine.geometry = new THREE.BufferGeometry();
             moveMarkersLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(movePos, 3));
             moveMarkersLine.geometry.setAttribute('color', new THREE.Float32BufferAttribute(moveCol, 3));
         }
@@ -12661,6 +13977,8 @@ function gameLoop(timestamp) {
             });
         }
         if (rangeMarkersLine) {
+            rangeMarkersLine.geometry.dispose();
+            rangeMarkersLine.geometry = new THREE.BufferGeometry();
             rangeMarkersLine.geometry.setAttribute('position', new THREE.Float32BufferAttribute(rangePos, 3));
             rangeMarkersLine.geometry.setAttribute('color', new THREE.Float32BufferAttribute(rangeCol, 3));
         }
@@ -12672,8 +13990,7 @@ function gameLoop(timestamp) {
         }
     }
     // Spy Disguise Mechanic
-    const activeUnits = window.__activeUnits;
-    entities.forEach(unit => {
+    activeUnits.forEach(unit => {
         if (unit.weapon === "Spy" && unit.state !== "dead") {
             if (unit.disguiseTimer > 0) {
                 unit.disguiseTimer -= deltaTime;
@@ -12683,21 +14000,39 @@ function gameLoop(timestamp) {
             }
             // Check collisions to break disguise
             if (unit.isDisguised) {
-                for (let i = 0; i < activeUnits.length; i++) {
-                    const other = activeUnits[i];
-                    if (other.state === "dead" || other === unit || other.faction === unit.faction) continue;
-                    const dist = Math.hypot(unit.x - other.x, unit.z - other.z);
-                    if (dist < (unit.radius || 0.5) + (other.radius || 0.5) + 0.1) {
-                        unit.isDisguised = false;
-                        unit.disguiseTimer = 10;
-                        break;
+                let broken = false;
+                const uCellX = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((unit.x + 150) / SPATIAL_CELL_SIZE)));
+                const uCellZ = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((unit.z + 150) / SPATIAL_CELL_SIZE)));
+                for(let dx=-1; dx<=1 && !broken; dx++) {
+                    for(let dz=-1; dz<=1 && !broken; dz++) {
+                        const cx = uCellX + dx;
+                        const cz = uCellZ + dz;
+                        if(cx >= 0 && cx < SPATIAL_WIDTH && cz >= 0 && cz < SPATIAL_HEIGHT) {
+                            const cellUnits = unitGrid[cz * SPATIAL_WIDTH + cx];
+                            if(cellUnits) {
+                                for(let i=0; i<cellUnits.length; i++) {
+                                    const other = cellUnits[i];
+                                    if (other.state === "dead" || other === unit || other.faction === unit.faction) continue;
+                                    const dist = Math.hypot(unit.x - other.x, unit.z - other.z);
+                                    if (dist < (unit.radius || 0.5) + (other.radius || 0.5) + 0.1) {
+                                        broken = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
+                }
+                if (broken) {
+                    unit.isDisguised = false;
+                    unit.disguiseTimer = 10;
                 }
             }
             // Update mesh colors
             if (unit.mesh) {
                 const body = unit.mesh.children.find(c => c.name === "spyBody");
                 if (body) {
+                    makeMaterialUnique(body);
                     if (unit.isDisguised) {
                         body.material.color.setHex(unit.faction === "red" ? 0x800080 : 0xffffff);
                     } else {
@@ -12709,11 +14044,24 @@ function gameLoop(timestamp) {
         // Assassin Stealth Mechanic
         if (unit.weapon === "Assassin" && unit.state !== "dead") {
             let minEnemyDist = Infinity;
-            for (let i = 0; i < activeUnits.length; i++) {
-                const other = activeUnits[i];
-                if (other.state === "dead" || other === unit || other.faction === unit.faction) continue;
-                const dist = Math.hypot(unit.x - other.x, unit.z - other.z);
-                if (dist < minEnemyDist) minEnemyDist = dist;
+            const uCellX = Math.max(0, Math.min(SPATIAL_WIDTH - 1, Math.floor((unit.x + 150) / SPATIAL_CELL_SIZE)));
+            const uCellZ = Math.max(0, Math.min(SPATIAL_HEIGHT - 1, Math.floor((unit.z + 150) / SPATIAL_CELL_SIZE)));
+            for(let dx=-1; dx<=1; dx++) {
+                for(let dz=-1; dz<=1; dz++) {
+                    const cx = uCellX + dx;
+                    const cz = uCellZ + dz;
+                    if(cx >= 0 && cx < SPATIAL_WIDTH && cz >= 0 && cz < SPATIAL_HEIGHT) {
+                        const cellUnits = unitGrid[cz * SPATIAL_WIDTH + cx];
+                        if (cellUnits) {
+                            for(let i=0; i<cellUnits.length; i++) {
+                                const other = cellUnits[i];
+                                if (other.state === "dead" || other === unit || other.faction === unit.faction) continue;
+                                const dist = Math.hypot(unit.x - other.x, unit.z - other.z);
+                                if (dist < minEnemyDist) minEnemyDist = dist;
+                            }
+                        }
+                    }
+                }
             }
             let bodyOpacity = 1.0;
             let maskOpacity = 1.0;
@@ -12764,6 +14112,7 @@ function gameLoop(timestamp) {
                             p = p.parent;
                         }
                         if (isMaskPart || c.name.startsWith("assassin")) {
+                            if (typeof makeMaterialUnique === "function") makeMaterialUnique(c);
                             c.material.opacity = isMaskPart ? maskOpacity : bodyOpacity;
                             c.material.transparent = true;
                         }
@@ -12776,13 +14125,19 @@ function gameLoop(timestamp) {
     if (gameFrameCount % 5 === 0) drawMinimap();
     
     // Update Healthbars
-    const hbSettingEl = document.getElementById('healthbar-setting');
+    if (!window.__hbSettingEl) window.__hbSettingEl = document.getElementById('healthbar-setting');
+    const hbSettingEl = window.__hbSettingEl;
     const hbSetting = hbSettingEl ? hbSettingEl.value : 'default';
-    entities.forEach(ent => {
+    activeUnits.concat(buildings).forEach(ent => {
         if (ent.type === "tower_tile" || ent.type === "tree" || ent.type === "iron" || ent.type === "stone" || ent.type === "gold" || ent.type === "wall_column" || ent.type === "wall_ramp" || ent.type === "gatehouse" || ent.type === "tower") return;
         if (!ent.mesh || ent.state === "dead") {
             if (ent.healthBar) {
                 scene.remove(ent.healthBar);
+                if (ent.healthBar.material) {
+                    if (ent.healthBar.material.map) ent.healthBar.material.map.dispose();
+                    ent.healthBar.material.dispose();
+                }
+                if (ent.healthTexture) ent.healthTexture.dispose();
                 ent.healthBar = null;
             }
             return;
@@ -12967,9 +14322,30 @@ window.killEntity = function(id) {
 // Death Trigger
 function triggerDeath(victim, killer) {
     if (victim.state === "dead") return;
+    if (victim.type === "tree") window.minimapBgDirty = true;
     victim.state = "dead";
     refundBlueprintResources(victim);
     victim.isDead = true;
+    if (victim.type === "peasant") {
+        if (victim.isWagon && victim.originLoadhouse) {
+            victim.originLoadhouse.wagonAway = false;
+            if (victim.originLoadhouse.mesh) {
+                const parkedWagon = victim.originLoadhouse.mesh.getObjectByName("wagonGroup");
+                if (parkedWagon) parkedWagon.visible = true;
+            }
+        }
+        victim.isWagon = false;
+        victim.wagon = null;
+        victim.originLoadhouse = null;
+        victim.workerBuilding = null;
+        victim.intendedFetchAmount = 0;
+        victim.payloadAmount = 0;
+        victim.payloadResource = null;
+        victim.craftedItem = null;
+        victim.disbandGoods = null;
+        victim.targetPosition = null;
+        victim.path = null;
+    }
     if (victim.pilots) {
         victim.pilots.forEach(p => triggerDeath(p, killer));
     }
@@ -13019,18 +14395,17 @@ function triggerDeath(victim, killer) {
                 // Immediately target nearest valid player unit
                 let bestTarget = null;
                 let minDist = Infinity;
-                entities.forEach(e => {
-                    if (e.faction === "red" && e.state !== "dead") {
-                        const isEnemyStone = (e.material === "stone" || e.type === "wall_column" || e.type === "gatehouse" || e.type === "wall_ramp" || e.type === "tower");
-                        if (!isEnemyStone) {
+                if (window.__activeUnits) {
+                    window.__activeUnits.forEach(e => {
+                        if (e.faction === "red" && e.state !== "dead") {
                             const d = Math.hypot(e.x - killer.x, e.z - killer.z);
                             if (d < minDist) {
                                 minDist = d;
                                 bestTarget = e;
                             }
                         }
-                    }
-                });
+                    });
+                }
                 
                 if (bestTarget) {
                     killer.targetEntity = null; // Free up targetEntity so handleCombat auto-acquires this priority
@@ -13050,10 +14425,18 @@ function triggerDeath(victim, killer) {
     }
     selectedEntities = selectedEntities.filter(e => e !== victim);
     spawnDeathSplatter(victim.x, victim.y, victim.z, victim.radius);
-    if (victim.type !== 'peasant' && victim.type !== 'soldier' && victim.type !== 'king' && !victim.type.startsWith('siege_')) needsPathGridUpdate = true;
+    if (victim.type !== 'peasant' && victim.type !== 'soldier' && victim.type !== 'king' && !victim.type.startsWith('siege_')) { needsPathGridUpdate = true; needsRegionGridUpdate = true; }
     scene.remove(victim.mesh);
-    if (victim.healthBar) scene.remove(victim.healthBar);
     disposeHierarchy(victim.mesh);
+    if (victim.healthBar) {
+        scene.remove(victim.healthBar);
+        if (victim.healthBar.material) {
+            if (victim.healthBar.material.map) victim.healthBar.material.map.dispose();
+            victim.healthBar.material.dispose();
+        }
+        if (victim.healthTexture) victim.healthTexture.dispose();
+        victim.healthBar = null;
+    }
     const index = entities.indexOf(victim);
     if (index > -1) {
         // entities.splice(index, 1); // Deferred to end of frame to prevent iteration crashes
@@ -13083,7 +14466,7 @@ function triggerDeath(victim, killer) {
 }
 // Particles
 function spawnSmoke(x, y, z) {
-    const geo = new THREE.SphereGeometry(0.2, 4, 4);
+    const geo = getSharedGeo('SphereGeometry', 0.2, 4, 4);
     const mat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, transparent: true, opacity: 0.8 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x + (Math.random() - 0.5) * 0.2, y, z + (Math.random() - 0.5) * 0.2);
@@ -13127,23 +14510,48 @@ function spawnAssassinSmoke(unit, x, y, z) {
         maxLife: 1.5
     });
 }
+window.FLOATING_TEXT_POOL = window.FLOATING_TEXT_POOL || [];
 function spawnFloatingText(text, x, y, z, colorHex) {
-    const canvas = document.createElement("canvas");
-    canvas.width = 128;
-    canvas.height = 32;
-    const ctx = canvas.getContext("2d");
+    let sprite, canvas, ctx, texture;
+    if (window.FLOATING_TEXT_POOL.length > 0) {
+        let pooled = window.FLOATING_TEXT_POOL.pop();
+        sprite = pooled.sprite;
+        canvas = pooled.canvas;
+        ctx = pooled.ctx;
+        texture = pooled.texture;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        sprite.visible = true;
+    } else {
+        canvas = document.createElement("canvas");
+        canvas.width = 128;
+        canvas.height = 32;
+        ctx = canvas.getContext("2d");
+        texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+        sprite = new THREE.Sprite(material);
+        scene.add(sprite);
+        sprite.userData = { sprite, canvas, ctx, texture };
+    }
+    
     ctx.font = "bold 20px Outfit";
-    ctx.fillStyle = "#ffffff";
+    
+    let colorStr = "#ffffff";
+    if (typeof colorHex === "number") {
+        colorStr = "#" + colorHex.toString(16).padStart(6, '0');
+    } else if (typeof colorHex === "string") {
+        colorStr = colorHex;
+    }
+    
+    ctx.fillStyle = colorStr;
     ctx.strokeStyle = "#000000";
     ctx.lineWidth = 4;
     ctx.strokeText(text, 10, 24);
     ctx.fillText(text, 10, 24);
-    const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
-    const sprite = new THREE.Sprite(material);
+    texture.needsUpdate = true;
+    
     sprite.position.set(x, y, z);
     sprite.scale.set(2, 0.5, 1);
-    scene.add(sprite);
+    
     particleEffects.push({
         mesh: sprite,
         type: "float",
@@ -13151,7 +14559,8 @@ function spawnFloatingText(text, x, y, z, colorHex) {
         y: y,
         z: z,
         life: 1.0,
-        maxLife: 1.0
+        maxLife: 1.0,
+        isFloatingText: true
     });
 }
 function spawnSlashEffect(x, y, z) {
@@ -13205,7 +14614,10 @@ function updateParticles(deltaTime) {
         const p = particleEffects[i];
         p.life -= deltaTime;
         if (p.life <= 0) {
-            if (p.type === "float" || p.type === "smoke" || p.type === "afterimage") {
+            if (p.isFloatingText) {
+                p.mesh.visible = false;
+                window.FLOATING_TEXT_POOL.push(p.mesh.userData);
+            } else if (p.type === "float" || p.type === "smoke" || p.type === "afterimage") {
                 scene.remove(p.mesh);
                 disposeHierarchy(p.mesh);
             } else if (p.type === "burst") {
@@ -14042,6 +15454,7 @@ function commitWallDraw(startPt, endPt) {
                 child.height = e.height;
                 child.maxHealth = e.maxHp;
                 child.health = e.maxHp;
+                scene.remove(child.mesh); disposeHierarchy(child.mesh); child.mesh = buildEntityMesh(child); child.mesh.position.set(child.x, child.y, child.z); scene.add(child.mesh);
                 e.childTiles.push(child.id);
             });
         } else {
@@ -14188,6 +15601,7 @@ function commitWallDraw(startPt, endPt) {
     }
     updateWallNeighborsAround(pts);
     needsPathGridUpdate = true;
+    needsRegionGridUpdate = true;
     updateUI();
     showStatusLog("Wall plans placed!");
 }
@@ -14199,17 +15613,22 @@ window.toggleGatehouse = function(id, mode) {
             if (g.type === gate.type) {
                 g.gateMode = mode;
                 let shouldBeOpen = g.isOpen;
-                if (mode === "OPEN") shouldBeOpen = true;
-                else if (mode === "CLOSED") shouldBeOpen = false;
-                else if (mode === "AUTO") {
-                    const enemyNear = entities.some(en => en.faction !== g.faction && en.state !== "dead" && Math.hypot(en.x - g.x, en.z - g.z) <= 7);
-                    shouldBeOpen = !enemyNear;
+                if (g.isZzz) {
+                    shouldBeOpen = true;
+                } else {
+                    if (mode === "OPEN") shouldBeOpen = true;
+                    else if (mode === "CLOSED") shouldBeOpen = false;
+                    else if (mode === "AUTO") {
+                        const enemyNear = entities.some(en => en.faction !== g.faction && en.state !== "dead" && Math.hypot(en.x - g.x, en.z - g.z) <= 7);
+                        shouldBeOpen = !enemyNear;
+                    }
                 }
                 if (g.isOpen !== shouldBeOpen) {
                     g.isOpen = shouldBeOpen;
-                    const door = g.mesh.children.find(c => c.name === "gatehouseDoor");
+                    const door = g.mesh.getObjectByName("gatehouseDoor");
                     if (door) door.visible = !shouldBeOpen;
                     needsPathGridUpdate = true;
+                    needsRegionGridUpdate = true;
                 }
             }
         });
@@ -14229,27 +15648,127 @@ window.toggleLoadhouseHorse = function(id) {
         updateSelectionHUD();
     }
 }
+function isUnitInOrOnGate(unit, e) {
+    if (!unit || unit.state === "dead") return false;
+    const hwX = (e.dimX || 1) / 2;
+    const hwZ = (e.dimZ || 1) / 2;
+    const roofHeight = e.y + (e.height || e.dimY || 1.0);
+    const dx = Math.abs(unit.x - e.x);
+    const dz = Math.abs(unit.z - e.z);
+
+    // 1. Check if unit is ON the gatehouse (elevated on the roof / wall-walk)
+    const roofThreshold = Math.max(e.y + 0.5, roofHeight - 0.8);
+    const isOnRoof = (unit.y >= roofThreshold) || (unit.onWall && unit.y >= roofHeight - 1.2);
+    if (isOnRoof) {
+        // Must be on the top surface footprint (with slight boundary tolerance for crenellations/edges)
+        if (dx <= hwX + 0.15 && dz <= hwZ + 0.15) {
+            return true;
+        }
+    }
+
+    // 2. Check if unit is IN the gatehouse (ground level passage / tunnel)
+    const isAtPassageLevel = (unit.y < roofThreshold) && (unit.y >= e.y - 0.5);
+    if (isAtPassageLevel) {
+        // Ground units can only enter/be inside the passage if the gate permits entry (open or currently disabled)
+        if (e.isOpen !== false || e.isZzz) {
+            // Must be genuinely inside the passage between corner pillars, not pushing against exterior walls/threshold
+            const maxPassageX = Math.max(0.15, hwX - 0.25);
+            const maxPassageZ = Math.max(0.15, hwZ - 0.25);
+            if (dx <= maxPassageX && dz <= maxPassageZ) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
 function updateDefenses(deltaTime) {
     entities.forEach(e => {
         if ((e.type === "gatehouse" || e.type === "keep") && !e.isDead && !e.isPlanned) {
+            
+            if (e.type === "gatehouse") {
+                e.zzzCooldown = (e.zzzCooldown || 0) - deltaTime;
+                
+                let allyOnGate = false;
+                let enemyOnGate = false;
+                
+                const hwX = (e.dimX || 1) / 2;
+                const hwZ = (e.dimZ || 1) / 2;
+                const queryRadius = Math.hypot(hwX, hwZ) + 0.5;
+                
+                getEntitiesInSplashRadius(e.x, e.z, queryRadius).forEach(hit => {
+                    const unit = hit.ent;
+                    if ((unit.type === "peasant" || unit.type === "soldier" || unit.type === "king") && unit.state !== "dead") {
+                        if (isUnitInOrOnGate(unit, e)) {
+                            if (unit.faction === e.faction) {
+                                allyOnGate = true;
+                            } else if (unit.faction && unit.faction !== "neutral") {
+                                if (!(unit.weapon === "Spy" && unit.isDisguised)) {
+                                    enemyOnGate = true;
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                if (e.zzzCooldown <= 0) {
+                    if (allyOnGate && !enemyOnGate && e.isZzz) {
+                        e.isZzz = false;
+                        if (window.applyZzzTint) window.applyZzzTint(e, false);
+                        e.zzzCooldown = 1.0;
+                    } else if (enemyOnGate && !allyOnGate && !e.isZzz) {
+                        e.isZzz = true;
+                        if (window.applyZzzTint) window.applyZzzTint(e, true);
+                        e.zzzCooldown = 1.0;
+                        
+                        const activePeasants = entities.filter(p => p.type === "peasant");
+                        activePeasants.forEach(p => {
+                            if (p.workerBuilding === e) {
+                                p.workerBuilding = null;
+                                p.state = "wander";
+                                p.targetPosition = null;
+                                p.path = null;
+                            }
+                        });
+                    }
+                }
+            }
+
             e.gateMode = e.gateMode || "AUTO";
             let shouldBeOpen = e.isOpen;
-            if (e.gateMode === "OPEN") {
+            
+            if (e.isZzz) {
                 shouldBeOpen = true;
-            } else if (e.gateMode === "CLOSED") {
-                shouldBeOpen = false;
-            } else if (e.gateMode === "AUTO") {
-                const enemyNear = getEntitiesInSplashRadius(e.x, e.z, 7).some(hit => {
-                    const en = hit.ent;
-                    return (en.type === "peasant" || en.type === "soldier" || en.type === "king") && en.faction && en.faction !== e.faction && en.state !== "dead" && !(en.weapon === "Spy" && en.isDisguised);
-                });
-                shouldBeOpen = !enemyNear;
+            } else {
+                if (e.gateMode === "OPEN") {
+                    shouldBeOpen = true;
+                } else if (e.gateMode === "CLOSED") {
+                    shouldBeOpen = false;
+                } else if (e.gateMode === "AUTO") {
+                    const checkRadius = e.isOpen ? 7 : 10;
+                    const enemyNear = getEntitiesInSplashRadius(e.x, e.z, checkRadius).some(hit => {
+                        const en = hit.ent;
+                        return (en.type === "peasant" || en.type === "soldier" || en.type === "king") && en.faction && en.faction !== e.faction && en.state !== "dead" && !(en.weapon === "Spy" && en.isDisguised);
+                    });
+                    let desiredOpen = !enemyNear;
+                    if (desiredOpen !== e.isOpen) {
+                        e.gateToggleTimer = (e.gateToggleTimer || 0) + deltaTime;
+                        if (!desiredOpen || e.gateToggleTimer > 3.0) {
+                            shouldBeOpen = desiredOpen;
+                            e.gateToggleTimer = 0;
+                        }
+                    } else {
+                        e.gateToggleTimer = 0;
+                    }
+                }
             }
+            
             if (e.isOpen !== shouldBeOpen) {
                 e.isOpen = shouldBeOpen;
                 const door = e.mesh.getObjectByName("gatehouseDoor");
                 if (door) door.visible = !shouldBeOpen;
                 needsPathGridUpdate = true;
+                needsRegionGridUpdate = true;
                 if (selectedEntities.includes(e)) updateSelectionHUD();
             }
         }

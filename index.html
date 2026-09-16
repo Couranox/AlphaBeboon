@@ -29,7 +29,12 @@
         <div style="background-color: #f4e8d2; padding: 30px; border: 4px solid #8b5a2b; border-radius: 8px; max-width: 600px; max-height: 90vh; overflow-y: auto; text-align: center; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="color: #4a3c31; font-family: 'Cinzel', serif; font-size: 2em; margin: 0;">Game Paused</h2>
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <label for="shadow-setting" style="font-family: 'Outfit', sans-serif; font-weight: bold; color: #4a3c31;">Shadows:</label>
+                    <select id="shadow-setting" style="font-family: 'Outfit', sans-serif; padding: 4px; border-radius: 4px; border: 1px solid #8b5a2b; background-color: #f4e8d2; color: #4a3c31; margin-right: 15px;">
+                        <option value="on" selected>On</option>
+                        <option value="off">Off (Fast)</option>
+                    </select>
                     <label for="healthbar-setting" style="font-family: 'Outfit', sans-serif; font-weight: bold; color: #4a3c31;">Healthbars:</label>
                     <select id="healthbar-setting" style="font-family: 'Outfit', sans-serif; padding: 4px; border-radius: 4px; border: 1px solid #8b5a2b; background-color: #f4e8d2; color: #4a3c31; margin-right: 15px;">
                         <option value="default" selected>Hurt / Selected</option>
@@ -348,6 +353,7 @@
             <div class="action-header" style="align-items: center;">
                 <div style="display: flex; align-items: baseline; gap: 10px;">
                     <h3>Actions & Construction</h3>
+                    <span id="building-drag-fine-print" style="font-size: 11px; color: #5d4037; font-style: italic; white-space: nowrap;"> SHIFT+Click/Drag to plan lines/boxes of buildings. </span>
                     <span id="market-fine-print" style="display: none; font-size:10px; color:#5d4037; font-style:italic;"></span>
                 </div>
                 
@@ -361,6 +367,33 @@
                     <button id="btn-undo" class="tab-btn" style="background-color: #ffa000; color: white;" title="Undo last blueprint">Undo</button>
                 </div>
                 
+                <!-- Multi-Unit Selection Tabs Container -->
+                <div id="multi-unit-header-container" style="display: none; align-items: center; gap: 8px;">
+                    <span id="multi-unit-fine-print" style="font-size: 11px; color: #5d4037; font-style: italic;">(doubleclick / shift-click to isolate tab)</span>
+                    <div class="hud-tabs" id="multi-unit-tabs">
+                        <button id="tab-unit-all" class="tab-btn active" onclick="handleMultiUnitTabClick(event, 'all')" title="Click: View All&#10;Double/Shift-Click: Isolate All">
+                            <span>All (<span id="count-unit-all">0</span>)</span>
+                            <span class="tab-close-x" onclick="deselectUnitCategory(event, 'all')" title="Deselect All">&times;</span>
+                        </button>
+                        <button id="tab-unit-melee" class="tab-btn" onclick="handleMultiUnitTabClick(event, 'melee')" title="Click: View Melee&#10;Double/Shift-Click: Isolate Melee">
+                            <span>Melee (<span id="count-unit-melee">0</span>)</span>
+                            <span class="tab-close-x" onclick="deselectUnitCategory(event, 'melee')" title="Deselect all Melee">&times;</span>
+                        </button>
+                        <button id="tab-unit-ranged" class="tab-btn" onclick="handleMultiUnitTabClick(event, 'ranged')" title="Click: View Ranged&#10;Double/Shift-Click: Isolate Ranged">
+                            <span>Ranged (<span id="count-unit-ranged">0</span>)</span>
+                            <span class="tab-close-x" onclick="deselectUnitCategory(event, 'ranged')" title="Deselect all Ranged">&times;</span>
+                        </button>
+                        <button id="tab-unit-cavalry" class="tab-btn" onclick="handleMultiUnitTabClick(event, 'cavalry')" title="Click: View Cavalry&#10;Double/Shift-Click: Isolate Cavalry">
+                            <span>Cavalry (<span id="count-unit-cavalry">0</span>)</span>
+                            <span class="tab-close-x" onclick="deselectUnitCategory(event, 'cavalry')" title="Deselect all Cavalry">&times;</span>
+                        </button>
+                        <button id="tab-unit-siege" class="tab-btn" onclick="handleMultiUnitTabClick(event, 'siege')" title="Click: View Siege&#10;Double/Shift-Click: Isolate Siege">
+                            <span>Siege (<span id="count-unit-siege">0</span>)</span>
+                            <span class="tab-close-x" onclick="deselectUnitCategory(event, 'siege')" title="Deselect all Siege">&times;</span>
+                        </button>
+                    </div>
+                </div>
+                
                 <!-- Barracks Header Controls -->
                 <div id="barracks-header-controls" style="display: none; align-items: center; gap: 15px;">
                     <div style="display: flex; align-items: center; gap: 5px; border: 1px solid #c62828; padding: 2px 5px; border-radius: 3px; background: rgba(198,40,40,0.1);">
@@ -370,12 +403,16 @@
                     <div id="barracks-armor-controls" style="display: flex; align-items: center; gap: 15px;">
 <button id="btn-armor-lock" onclick="toggleArmorLock()" class="wood-btn" style="padding: 2px 6px; font-size: 14px; min-width: auto; height: auto;" title="Toggle Strict Armor Requirement">&#x1F513;</button>
                     <label style="color: #3e2723; font-weight: bold; margin-bottom: 0;">Equip Armor & Mount:</label>
-                    <div class="checkbox-group" style="display: flex; gap: 10px;">
+                    <div class="checkbox-group" style="display: flex; gap: 10px; align-items: center;">
                         <label class="checkbox-container"><input type="checkbox" id="chk-cloth"> Cloth (<span id="stock-cloth">0</span>)<span class="checkmark"></span></label>
                         <label class="checkbox-container"><input type="checkbox" id="chk-leather"> Leather (<span id="stock-leather">0</span>)<span class="checkmark"></span></label>
                         <label class="checkbox-container"><input type="checkbox" id="chk-chain"> Chain (<span id="stock-chain">0</span>)<span class="checkmark"></span></label>
                         <label class="checkbox-container"><input type="checkbox" id="chk-plate"> Plate (<span id="stock-plate">0</span>)<span class="checkmark"></span></label>
                         <label class="checkbox-container"><input type="checkbox" id="chk-horse"> Horse (<span id="stock-horse">0</span>)<span class="checkmark"></span></label>
+                        <div style="display: flex; gap: 4px; margin-left: 4px;">
+                            <button id="btn-armor-all" onclick="setAllArmorCheckboxes(true)" class="wood-btn" style="padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: auto; height: auto;" title="Check all armor and mount options">ALL</button>
+                            <button id="btn-armor-none" onclick="setAllArmorCheckboxes(false)" class="wood-btn" style="padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: auto; height: auto;" title="Uncheck all armor and mount options">NONE</button>
+                        </div>
                     </div>
 </div>
                 </div>
@@ -809,6 +846,6 @@
     </div>
 
     <!-- Game Scripts -->
-    <script src="game.js?v=20260830"></script>
+    <script src="game.js?v=20260929_fix"></script>
 </body>
 </html>
