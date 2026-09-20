@@ -6443,7 +6443,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 }
                 if (dist > 0.05) {
                     const targetAngle = Math.atan2(dx, dz);
-                    unit.mesh.rotation.y = targetAngle;
+                    if (unit.mesh) unit.mesh.rotation.y = targetAngle;
                 }
                 if (unit.type === "siege_tower" && unit.preMoveX !== undefined && unit.preMoveZ !== undefined) {
                     const mDx = unit.x - unit.preMoveX;
@@ -7529,6 +7529,7 @@ function getPredictedTargetPosition(target, timeSeconds = 10.0) {
 // --- COMBAT & DAMAGE ENGINE ---
 function handleCombat(deltaTime, combatants) {
     combatants.forEach(unit => {
+        if (!unit || unit.state === "dead" || !unit.mesh || unit.state === "siege_pilot") return;
         if (unit.cooldownTimer > 0) {
             unit.cooldownTimer -= deltaTime;
         }
@@ -7758,7 +7759,7 @@ function handleCombat(deltaTime, combatants) {
         }
         if (inRange) {
             if (unit.weapon === "Catapult" || unit.weapon === "Trebuchet" || unit.weapon === "Mangonel" || unit.weapon === "Ram") {
-                unit.mesh.rotation.y = Math.atan2(target.x - unit.x, target.z - unit.z);
+                if (unit.mesh) unit.mesh.rotation.y = Math.atan2(target.x - unit.x, target.z - unit.z);
             }
             if (unit.weapon === "Ram") {
                 if (unit._lastRamTarget !== target) {
@@ -7826,7 +7827,7 @@ function handleCombat(deltaTime, combatants) {
                         });
                     }
                 }
-                unit.mesh.rotation.y = Math.atan2(target.x - unit.x, target.z - unit.z);
+                if (unit.mesh) unit.mesh.rotation.y = Math.atan2(target.x - unit.x, target.z - unit.z);
             }
             // Stop chasing if we hit range limit
             if (unit.state === "attacking" || unit.state === "attack_ground") {
@@ -8403,6 +8404,9 @@ function convertPeasantToSiegeUnit(peasant, shop) {
             if (pilotsConverted < order.peasantsNeeded && e.type === "peasant" && e.state === "siege_waiting" && e.targetSiegeShop === shop && e.trainingConfig && e.trainingConfig.type === config.type) {
                 e.state = "siege_pilot";
                 e.visible = false;
+                e.targetEntity = null;
+                e.targetPosition = null;
+                e.path = null;
                 if (!siegeEnt.pilots) siegeEnt.pilots = [];
                 siegeEnt.pilots.push(e);
                 if (e.mesh) {
@@ -15182,6 +15186,9 @@ function triggerDeath(victim, killer) {
     if (victim.state === "dead") return;
     if (victim.type === "tree") window.minimapBgDirty = true;
     victim.state = "dead";
+    victim.targetEntity = null;
+    victim.targetPosition = null;
+    victim.path = null;
     refundBlueprintResources(victim);
     victim.isDead = true;
     if (victim.type === "peasant") {
