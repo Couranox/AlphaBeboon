@@ -47,10 +47,10 @@ const WORKER_STATES = new Set([
     "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "siege_pilot", "cutting_wood"
 ]);
 const STUCK_RETAIN_STATES = new Set([
-    "attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"
+    "attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "repairing", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"
 ]);
 
-window.__peasantAwayStates = new Set(["constructing_delivering", "wander", "training", "siege_training", "farmer_walking_to_farm", "woodcutter_walking_to_hut", "miner_returning", "worker_returning_to_shop_with_materials", "worker_returning_to_shop", "loadhouse_peasant_delivering"]);
+window.__peasantAwayStates = new Set(["constructing_delivering", "repairing", "wander", "training", "siege_training", "farmer_walking_to_farm", "woodcutter_walking_to_hut", "miner_returning", "worker_returning_to_shop_with_materials", "worker_returning_to_shop", "loadhouse_peasant_delivering"]);
 window.__peasantTowardsStates = new Set(["constructing_fetching", "returning_payload", "going_home", "farmer_walking_to_keep", "woodcutter_delivering", "miner_delivering", "worker_fetching", "loadhouse_peasant_fetching"]);
 
 // Base Unit Stats
@@ -69,7 +69,7 @@ const BASE_STATS = {
 };
 // Building configurations
 const BUILDING_TYPES = {
-    keep:        { name: "Keep",         radius: 2.5, height: 6.0, color: 0x757575, maxHp: 2000, peasantCap: 10, cost: 0, goldCost: 0, armor: 9, material: "stone" },
+    keep:        { name: "Keep",         radius: 2.5, height: 6.0, color: 0x757575, maxHp: 12600, peasantCap: 10, cost: 0, goldCost: 0, armor: 9, material: "stone" },
     house:       { name: "House",        radius: 1.5, height: 2.2, color: 0x8d6e63, maxHp: 300,  peasantCap: 10, cost: 10, goldCost: 0, armor: 5 },
     barracks:    { name: "Barracks",     radius: 2.0, height: 2.4, color: 0x9e9e9e, maxHp: 500,  peasantCap: 0,  cost: 10, goldCost: 0, armor: 9, material: "stone" },
     mercenary_post:{ name: "Mercenary Post", radius: 2.0, height: 2.4, color: 0x4a148c, maxHp: 500, peasantCap: 0, cost: 20, goldCost: 0, armor: 5 },
@@ -452,6 +452,137 @@ let wallDrawMode = null; // "freehand", "line", "box", "circle", "ramp", "gateho
 let wallDrawStart = null;
 let wallGhosts = [];
 let wallFreehandPath = [];
+
+// Repair and Cancel Modes
+let isRepairMode = false;
+let isCancelMode = false;
+let repairMarkerMaterial = null;
+
+// Combat Indicators Settings (Miss: off by default, Damage: on by default)
+let showMissIndicators = false;
+let showDamageIndicators = true;
+try {
+    const _sm = localStorage.getItem("setting_miss_indicators");
+    if (_sm !== null) showMissIndicators = (_sm === "on");
+    const _sd = localStorage.getItem("setting_damage_indicators");
+    if (_sd !== null) showDamageIndicators = (_sd !== "off");
+} catch (_) {}
+window.showMissIndicators = showMissIndicators;
+window.showDamageIndicators = showDamageIndicators;
+
+function getSharedRepairMarkerMaterial() {
+    if (!repairMarkerMaterial) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        ctx.beginPath();
+        ctx.arc(32, 32, 28, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(46, 125, 50, 0.9)";
+        ctx.fill();
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+        ctx.font = "32px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("🔨", 32, 35);
+        const texture = new THREE.CanvasTexture(canvas);
+        repairMarkerMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    }
+    return repairMarkerMaterial;
+}
+
+function getParentTowerIfTile(ent) {
+    if (!ent || ent.type !== "tower_tile") return ent;
+    if (ent.parentId) {
+        const pt = entities.find(e => e.id === ent.parentId);
+        if (pt) return pt;
+    }
+    return entities.find(e => e.type === "tower" && ((e.childTiles && e.childTiles.includes(ent.id)) || Math.hypot(e.x - ent.x, e.z - ent.z) <= (e.radius || 2.0))) || ent;
+}
+
+function ensureSelectionRing(entity) {
+    if (!entity || !entity.mesh) return;
+    if (entity.type === "tower_tile") return;
+    if (entity.selectionRing && entity.mesh.children && entity.mesh.children.includes(entity.selectionRing)) return;
+    const r = entity.type === "tower"
+        ? Math.max(1.0, ((entity.dimX || (entity.radius ? entity.radius * 2 + 1 : 3)) / 2.0) + 0.3)
+        : (entity.radius || 0.5);
+    const ringGeo = new THREE.RingGeometry(r * 1.15, r * 1.3, 24);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+        color: entity.faction === "red" ? 0x00ff00 : 0xff0000,
+        side: THREE.DoubleSide,
+        visible: selectedEntities.includes(entity)
+    });
+    entity.selectionRing = new THREE.Mesh(ringGeo, ringMat);
+    entity.selectionRing.position.y = 0.05;
+    entity.mesh.add(entity.selectionRing);
+}
+
+function canStructureBeRepaired(ent) {
+    if (!ent || ent.state === "dead" || ent.isPlanned || ent.faction !== "red") return false;
+    ent = getParentTowerIfTile(ent);
+    if (ent.type === "tree" || ent.type === "iron" || ent.type === "stone" || ent.type === "gold") return false;
+    const isStructure = isStructureEntity(ent) || ent.baseSpeed === 0;
+    if (!isStructure) return false;
+    const maxHp = ent.maxHealth || (BUILDING_TYPES[ent.type] ? BUILDING_TYPES[ent.type].maxHp : (ent.maxHp || 100));
+    return (ent.health < maxHp);
+}
+
+function markStructureForRepair(ent) {
+    if (!ent || ent.state === "dead" || ent.isPlanned) return;
+    ent = getParentTowerIfTile(ent);
+    if (!canStructureBeRepaired(ent)) return;
+    ent.isMarkedForRepair = true;
+    if (!ent.repairMarker && typeof scene !== "undefined" && scene) {
+        const sprite = new THREE.Sprite(getSharedRepairMarkerMaterial());
+        sprite.renderOrder = 999;
+        const s = Math.max(1.2, Math.min(2.5, (ent.radius || 1.0) * 1.2));
+        sprite.scale.set(s, s, 1);
+        const y = (ent.y !== undefined ? ent.y : getTerrainHeight(ent.x, ent.z)) + (ent.height || 2.0) + 1.2;
+        sprite.position.set(ent.x, y, ent.z);
+        scene.add(sprite);
+        ent.repairMarker = sprite;
+    }
+}
+
+function unmarkStructureForRepair(ent) {
+    if (!ent) return;
+    ent = getParentTowerIfTile(ent);
+    ent.isMarkedForRepair = false;
+    if (ent.repairMarker) {
+        if (typeof scene !== "undefined" && scene) scene.remove(ent.repairMarker);
+        ent.repairMarker = null;
+    }
+    entities.forEach(p => {
+        if (p.type === "peasant" && p.state === "repairing" && p.workerBuilding === ent) {
+            p.workerBuilding = null;
+            p.state = "wander";
+            p.targetPosition = null;
+            p.path = null;
+            p.repairFraction = 0;
+        }
+    });
+}
+
+window.clearAllBlueprintsAndRepairs = function() {
+    let bpCount = 0;
+    let repCount = 0;
+    const planned = entities.filter(e => e.isPlanned && e.faction === "red" && e.state !== "dead");
+    planned.forEach(b => {
+        bpCount++;
+        cancelPlannedBuilding(b.id);
+    });
+    const repairing = entities.filter(e => e.isMarkedForRepair && e.state !== "dead");
+    repairing.forEach(r => {
+        repCount++;
+        unmarkStructureForRepair(r);
+    });
+    showStatusLog(`Cleared all: ${bpCount} blueprint(s), ${repCount} repair order(s).`);
+};
+
 // --- TERRAIN HEIGHT FUNCTION (2.5D) ---
 const MOUNTAINS = [];
 for (let i = 0; i < 3; i++) {
@@ -795,6 +926,24 @@ document.getElementById("volume-slider").addEventListener("input", (e) => {
         bgMusic.volume = vol;
     }
 });
+const missSettingEl = document.getElementById("miss-setting");
+if (missSettingEl) {
+    missSettingEl.value = showMissIndicators ? "on" : "off";
+    missSettingEl.addEventListener("change", (e) => {
+        showMissIndicators = (e.target.value === "on");
+        window.showMissIndicators = showMissIndicators;
+        try { localStorage.setItem("setting_miss_indicators", e.target.value); } catch (_) {}
+    });
+}
+const damageSettingEl = document.getElementById("damage-setting");
+if (damageSettingEl) {
+    damageSettingEl.value = showDamageIndicators ? "on" : "off";
+    damageSettingEl.addEventListener("change", (e) => {
+        showDamageIndicators = (e.target.value === "on");
+        window.showDamageIndicators = showDamageIndicators;
+        try { localStorage.setItem("setting_damage_indicators", e.target.value); } catch (_) {}
+    });
+}
 document.getElementById("btn-restart-menu").addEventListener("click", () => {
     window.isPaused = false;
     document.getElementById("pause-menu").style.display = "none";
@@ -1437,6 +1586,18 @@ if (minimapCanvas) {
     document.getElementById("tab-walls").addEventListener("click", () => showBuildTab("walls"));
     const tabLuxuries = document.getElementById("tab-luxuries");
     if (tabLuxuries) tabLuxuries.addEventListener("click", () => showBuildTab("luxuries"));
+    const tabRepair = document.getElementById("tab-repair");
+    if (tabRepair) {
+        tabRepair.addEventListener("click", () => showBuildTab("repair"));
+    }
+    const tabCancel = document.getElementById("tab-cancel");
+    if (tabCancel) {
+        tabCancel.addEventListener("click", () => showBuildTab("cancel"));
+        tabCancel.addEventListener("dblclick", (e) => {
+            e.stopPropagation();
+            clearAllBlueprintsAndRepairs();
+        });
+    }
     const tabDemolish = document.getElementById("tab-demolish");
     if (tabDemolish) {
         tabDemolish.addEventListener("click", () => showBuildTab("demolish"));
@@ -4955,10 +5116,11 @@ function findPath(unit, targetPos, targetRadius = 0) {
                         let maxJumpDown = (isCurrRamp === 1 || isCurrRamp === 2 || isNextRamp === 1 || isNextRamp === 2) ? 1.6 : isRoofDrop;
                         const currSurfs = pathGrid[cIdx];
                         const nextSurfs = pathGrid[idx];
-                        if (currSurfs && nextSurfs) {
-                            if ((currSurfs.isTower && nextSurfs.isWall) || (currSurfs.isWall && nextSurfs.isTower)) {
-                                maxJumpUp = 999.0;
-                                maxJumpDown = 999.0;
+                        if (currSurfs) {
+                            if (nextSurfs) {
+                                const cElevated = current.y > getTerrainHeight(current.x, current.z) + 0.5;
+                                const nElevated = ny > getTerrainHeight(nx, nz) + 0.5;
+                                // Tower/Wall jump hacks removed to force A* to use elevator paths (just like Gatehouses)
                             }
                         }
                         if (unit && unit.weapon === "Assassin") {
@@ -5625,7 +5787,7 @@ function getUnitMass(u) {
                 mass = 0.001;
             } else if (["returning_payload", "gather_returning", "constructing_fetching", "worker_fetching", "woodcutter_delivering", "miner_delivering", "farmer_walking_to_keep", "loadhouse_peasant_delivering", "loadhouse_peasant_fetching"].includes(state)) {
                 mass = 5;
-            } else if (["constructing_delivering", "woodcutter_walking_to_tree", "miner_returning", "farmer_walking_to_farm", "worker_returning_to_shop", "worker_returning_to_shop_with_materials"].includes(state)) {
+            } else if (["constructing_delivering", "repairing", "woodcutter_walking_to_tree", "miner_returning", "farmer_walking_to_farm", "worker_returning_to_shop", "worker_returning_to_shop_with_materials"].includes(state)) {
                 mass = 200;
             } else if (["training", "siege_training"].includes(state)) {
                 mass = 400; // Weighed heavily (like soldiers) so normal peasants yield to them
@@ -5935,6 +6097,124 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 unit.path = null;
             }
         }
+        if (unit.state === "repairing") {
+            const b = unit.workerBuilding;
+            if (!b || b.state === "dead" || b.isDead || b.isPlanned || !b.isMarkedForRepair) {
+                unit.state = "wander";
+                unit.workerBuilding = null;
+                unit.targetPosition = null;
+                unit.path = null;
+            } else {
+                const maxHp = b.maxHealth || (BUILDING_TYPES[b.type] ? BUILDING_TYPES[b.type].maxHp : (b.maxHp || 100));
+                if (b.health >= maxHp) {
+                    b.health = maxHp;
+                    unmarkStructureForRepair(b);
+                    unit.state = "wander";
+                    unit.workerBuilding = null;
+                    unit.targetPosition = null;
+                    unit.path = null;
+                } else {
+                    if (!unit.targetPosition) {
+                        unit.targetPosition = new THREE.Vector3(b.x, getTerrainHeight(b.x, b.z), b.z);
+                    }
+                    let reach = (b.radius || Math.max(b.dimX || 1, b.dimZ || 1) / 2) + 2.0;
+                    if (["wall_column", "wall_ramp", "gatehouse", "tower", "tower_tile"].includes(b.type)) reach += 3.0;
+
+                    let distToTarget = Math.hypot(unit.x - unit.targetPosition.x, unit.z - unit.targetPosition.z);
+                    if (b.childTiles && b.childTiles.length > 0) {
+                        let minChildDist = Infinity;
+                        b.childTiles.forEach(tileId => {
+                            const tile = entities.find(e => e.id === tileId);
+                            if (tile) {
+                                const d = Math.hypot(unit.x - tile.x, unit.z - tile.z);
+                                if (d < minChildDist) minChildDist = d;
+                            }
+                        });
+                        distToTarget = Math.min(distToTarget, minChildDist);
+                    }
+
+                    if (distToTarget <= reach) {
+                        unit.path = null;
+                        if (unit.mesh) {
+                            unit.mesh.rotation.y = Math.atan2(b.x - unit.x, b.z - unit.z);
+                        }
+                        const keep = (window.__gameStateCache ? (unit.faction === 'red' ? window.__gameStateCache.redKeep : window.__gameStateCache.blueKeep) : null);
+                        let keepDist = 0;
+                        if (keep) {
+                            keepDist = Math.hypot(b.x - keep.x, b.z - keep.z);
+                        }
+                        const distFactor = Math.max(1.0, keepDist / 15.0);
+                        const unitCost = Math.max(1, b.type === "keep" ? 252 : (b.type === "tower" ? Math.max(2, Math.round(maxHp / 50)) : (b.resourcesNeededTotal || (BUILDING_TYPES[b.type] ? (BUILDING_TYPES[b.type].cost || 10) : 10))));
+                        let rType = b.material || (["wall_column", "gatehouse", "wall_ramp", "tower", "barracks", "keep"].includes(b.type) ? "stone" : "wood");
+                        const kingHpRate = (maxHp / unitCost) * (20 / distFactor);
+                        const peasantHpRate = 0.25 * kingHpRate;
+                        const hpNeeded = maxHp - b.health;
+                        const targetHpGain = Math.min(hpNeeded, peasantHpRate * deltaTime);
+                        const halfResPerHp = 0.5 * (unitCost / maxHp);
+                        const resNeeded = targetHpGain * halfResPerHp;
+                        
+                        const ironCostTotal = (BUILDING_TYPES[b.type] && BUILDING_TYPES[b.type].ironCost) ? BUILDING_TYPES[b.type].ironCost : 0;
+                        const ironNeeded = ironCostTotal > 0 ? targetHpGain * 0.5 * (ironCostTotal / maxHp) : 0;
+
+                        const resAvailable = (resources[rType] || 0);
+                        const ironAvailable = ironCostTotal > 0 ? (resources.iron || 0) : Infinity;
+
+                        if (resAvailable > 0 && ironAvailable > 0) {
+                            unit.repairFraction = (unit.repairFraction || 0) + resNeeded;
+                            if (ironNeeded > 0) {
+                                unit.ironRepairFraction = (unit.ironRepairFraction || 0) + ironNeeded;
+                            }
+                            let deductInt = Math.floor(unit.repairFraction);
+                            if (deductInt > 0) {
+                                let toDeduct = Math.min(resAvailable, deductInt);
+                                resources[rType] -= toDeduct;
+                                unit.repairFraction -= toDeduct;
+                                window.uiNeedsUpdate = true;
+                            }
+                            if (ironNeeded > 0 && unit.ironRepairFraction >= 1) {
+                                let deductIron = Math.floor(unit.ironRepairFraction);
+                                let toDeductIron = Math.min(resources.iron, deductIron);
+                                resources.iron -= toDeductIron;
+                                unit.ironRepairFraction -= toDeductIron;
+                                window.uiNeedsUpdate = true;
+                            }
+                            b.health = Math.min(maxHp, b.health + targetHpGain);
+                            window.uiNeedsUpdate = true;
+
+                            if (b.type === "wall_column" && b.blocks) {
+                                const expectedBlocks = Math.min(Math.floor((b.maxHealth || 100) / 100), Math.ceil(b.health / 100));
+                                if (expectedBlocks > b.blocks.length) {
+                                    while (b.blocks.length < expectedBlocks) {
+                                        b.blocks.push({ hp: 100 });
+                                    }
+                                    b.height = b.blocks.length;
+                                    scene.remove(b.mesh);
+                                    disposeHierarchy(b.mesh);
+                                    b.mesh = buildEntityMesh(b);
+                                    b.mesh.position.set(b.x, b.y, b.z);
+                                    needsPathGridUpdate = true;
+                                }
+                            }
+
+                            if (b.health >= maxHp) {
+                                b.health = maxHp;
+                                unmarkStructureForRepair(b);
+                                showStatusLog((b.name || b.type.toUpperCase()) + " fully repaired!");
+                                unit.state = "wander";
+                                unit.workerBuilding = null;
+                                unit.targetPosition = null;
+                                unit.path = null;
+                            }
+                        } else if (resAvailable <= 0) {
+                            if (!unit._lastResWarnTime || performance.now() - unit._lastResWarnTime > 5000) {
+                                unit._lastResWarnTime = performance.now();
+                                showStatusLog(`Repairs stalled: Not enough ${rType}!`);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         let isMovingThisFrame = false;
         // Don't steer if miner/worker is inside a mine/shop
         if (unit.state === "crafting" || !unit.mesh || (!unit.mesh.visible && unit.weapon !== "Assassin")) {
@@ -5944,10 +6224,10 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
             let pathRadius = 0;
             if (["constructing_fetching", "returning_payload", "wagon_delivering", "loadhouse_peasant_delivering", "loadhouse_peasant_fetching", "worker_fetching", "worker_delivering_item", "woodcutter_delivering", "miner_delivering", "farmer_walking_to_keep"].includes(unit.state)) {
                 pathRadius = 4.0;
-            } else if (["constructing_delivering", "training", "siege_training", "worker_returning_to_shop", "worker_returning_to_shop_with_materials", "woodcutter_walking_to_hut", "miner_returning", "farmer_walking_to_farm", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "miner", "farmer", "shop_worker", "market_worker"].includes(unit.state)) {
+            } else if (["constructing_delivering", "repairing", "training", "siege_training", "worker_returning_to_shop", "worker_returning_to_shop_with_materials", "woodcutter_walking_to_hut", "miner_returning", "farmer_walking_to_farm", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "miner", "farmer", "shop_worker", "market_worker"].includes(unit.state)) {
                 const b = unit.workerBuilding || unit.targetBarracks || unit.targetSiegeShop || unit.homeBuilding;
                 pathRadius = b ? (b.radius || Math.max(b.dimX || 1, b.dimZ || 1) / 2) + 1.0 : 2.0;
-                if (unit.state === "constructing_delivering" && b && (b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "tower" || b.type === "tower_tile")) {
+                if ((unit.state === "constructing_delivering" || unit.state === "repairing") && b && (b.type === "wall_column" || b.type === "wall_ramp" || b.type === "gatehouse" || b.type === "tower" || b.type === "tower_tile")) {
                     pathRadius += 3.0; // Extra build range
                 }
             } else if (unit.state === "woodcutter_walking_to_tree") {
@@ -6143,12 +6423,8 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
 
             let dist2D = Math.hypot(localTarget.x - unit.x, localTarget.z - unit.z);
             let dropWaypoint = dist2D < shiftDist;
-            if (!isTowerWallJump && localTarget.y !== undefined && Math.abs(localTarget.y - unit.y) > 0.8) {
-                if (localTarget.y < unit.y) {
-                    if (dist2D < 0.25) dropWaypoint = true;
-                } else if (dist2D < 0.6) {
-                    dropWaypoint = true;
-                }
+            if (!isTowerWallJump && localTarget.y !== undefined && Math.abs(localTarget.y - unit.y) > 0.8 && dist2D < 0.6) {
+                dropWaypoint = true;
             }
             if (isTowerWallJump && localTarget.y < unit.y && dist2D > 0.1) {
                 dropWaypoint = false;
@@ -6254,7 +6530,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                 if (unit.path) {
                     unit.path = null;
                 }
-                if (!["attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"].includes(unit.state)) {
+                if (!["attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "repairing", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"].includes(unit.state)) {
                     unit.targetPosition = null;
                 }
                 if (unit.state === "moving") {
@@ -6492,7 +6768,7 @@ function handleMovementAndCollisions(deltaTime, activeUnits, buildings) {
                     }
                 }
             } else {
-                if (!["attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"].includes(unit.state)) {
+                if (!["attack_ground", "attacking", "constructing_fetching", "constructing_delivering", "repairing", "fetching", "returning_payload", "mining", "farming", "worker_fetching", "worker_returning_to_shop_with_materials", "worker_delivering_item", "worker_returning_to_shop", "shop_worker", "loadhouse_peasant_fetching", "loadhouse_peasant_delivering", "woodcutter_walking_to_tree", "woodcutter_walking_to_hut", "woodcutter_delivering", "miner_delivering", "miner_returning", "miner", "farmer", "farmer_walking_to_keep", "farmer_walking_to_farm", "market_worker", "loadhouse_worker", "loadhouse_fetching_horse", "going_home", "training", "siege_training", "wagon_delivering"].includes(unit.state)) {
                     unit.targetPosition = null;
                 }
                 if (unit.state === "moving") {
@@ -8190,7 +8466,7 @@ function updateProjectiles(deltaTime, activeShields) {
                 }
                 
                 if (!hitAnything) {
-                    spawnFloatingText(crashed ? "Blocked!" : "Missed!", p.x, p.y + 0.5, p.z, 0x757575);
+                    if (showMissIndicators) spawnFloatingText(crashed ? "Blocked!" : "Missed!", p.x, p.y + 0.5, p.z, 0x757575);
                 }
             } else {
                 if (crashed) {
@@ -8223,7 +8499,7 @@ function updateProjectiles(deltaTime, activeShields) {
                     if (hitEntity) {
                         dealDamage(p.attacker, hitEntity, p.damage);
                     } else {
-                        spawnFloatingText("Missed!", p.x, p.y + 0.5, p.z, 0x757575);
+                        if (showMissIndicators) spawnFloatingText("Missed!", p.x, p.y + 0.5, p.z, 0x757575);
                     }
                 }
             }
@@ -8244,6 +8520,9 @@ function processSoldierQueue(activePeasants) {
     const factions = ["red", "blue"];
     factions.forEach(faction => {
         let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home" || p.state === "idle"));
+        if (idlePeasants.length === 0) {
+            idlePeasants = activePeasants.filter(p => p.faction === faction && p.state === "repairing");
+        }
         if (idlePeasants.length === 0) return;
         const sq = soldierTrainingQueue[faction];
         while (sq && sq.length > 0 && idlePeasants.length > 0) {
@@ -8261,6 +8540,10 @@ function processSoldierQueue(activePeasants) {
                     }
                 }
                 const p = idlePeasants.splice(bestIdx, 1)[0];
+                if (p.state === "repairing") {
+                    p.workerBuilding = null;
+                    p.repairFraction = 0;
+                }
                 sq.shift();
                 p.state = "training";
                 p.targetBarracks = b;
@@ -8451,6 +8734,9 @@ function processSiegeQueue(activePeasants) {
     const factions = ["red", "blue"];
     factions.forEach(faction => {
         let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home" || p.state === "idle"));
+        if (idlePeasants.length === 0) {
+            idlePeasants = activePeasants.filter(p => p.faction === faction && p.state === "repairing");
+        }
         if (idlePeasants.length === 0) return;
         const sq = siegeTrainingQueue[faction];
         if (!sq || sq.length === 0) return;
@@ -8471,6 +8757,10 @@ function processSiegeQueue(activePeasants) {
                         }
                     }
                     const p = idlePeasants.splice(bestIdx, 1)[0];
+                    if (p.state === "repairing") {
+                        p.workerBuilding = null;
+                        p.repairFraction = 0;
+                    }
                     p.state = "siege_training";
                     p.targetSiegeShop = b;
                     p.trainingConfig = { type: order.type };
@@ -8489,6 +8779,9 @@ function processConstructionQueue(activePeasants, keeps, filterFn = null) {
     const factions = ["red", "blue"];
     factions.forEach(faction => {
         let idlePeasants = activePeasants.filter(p => p.faction === faction && (p.state === "wander" || p.state === "going_home" || p.state === "idle"));
+        if (idlePeasants.length === 0) {
+            idlePeasants = activePeasants.filter(p => p.faction === faction && p.state === "repairing");
+        }
         if (idlePeasants.length === 0) return;
         const planned = entities.filter(e => e.faction === faction && e.isPlanned && e.state !== "dead" && !e.isUnreachable && !e.isZzz && e.type !== "tower_tile" && (!filterFn || filterFn(e)));
         if (planned.length === 0) return;
@@ -8563,6 +8856,10 @@ function processConstructionQueue(activePeasants, keeps, filterFn = null) {
                     }
                 }
                 let p = idlePeasants.splice(bestIdx, 1)[0];
+                if (p.state === "repairing") {
+                    p.workerBuilding = null;
+                    p.repairFraction = 0;
+                }
                 let availablePayload = (p.payloadAmount > 0 && p.payloadResource === rType) ? p.payloadAmount : 0;
                 let fetchAmount = 0;
                 let payloadUsed = 0;
@@ -8768,8 +9065,10 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
     function popNearestIdlePeasant(pool, x, z) {
         let bestDist = Infinity;
         let bestIdx = -1;
+        const hasTrulyIdle = pool.some(p => p.state === "wander" || p.state === "going_home" || p.state === "idle");
         for (let i = 0; i < pool.length; i++) {
             const p = pool[i];
+            if (hasTrulyIdle && p.state === "repairing") continue;
             const dist = Math.hypot(p.x - x, p.z - z);
             if (dist < bestDist) {
                 bestDist = dist;
@@ -8777,14 +9076,19 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
             }
         }
         if (bestIdx >= 0) {
-            return pool.splice(bestIdx, 1)[0];
+            const chosen = pool.splice(bestIdx, 1)[0];
+            if (chosen.state === "repairing") {
+                chosen.workerBuilding = null;
+                chosen.repairFraction = 0;
+            }
+            return chosen;
         }
         return null;
     }
     processConstructionQueue(activePeasants, keeps, e => e.type === "house");
     processSoldierQueue(activePeasants);
     processSiegeQueue(activePeasants);
-    const idlePeasantPool = activePeasants.filter(e => e.faction === "red" && (e.state === "wander" || e.state === "going_home" || e.state === "idle"));
+    const idlePeasantPool = activePeasants.filter(e => e.faction === "red" && (e.state === "wander" || e.state === "going_home" || e.state === "idle" || e.state === "repairing"));
     activePeasants.forEach(p => {
         if ((p.state === "constructing_fetching" || p.state === "constructing_delivering") && p.workerBuilding && p.workerBuilding.isUnreachable) {
             let rType = p.workerBuilding.material || ((p.workerBuilding.type === "wall_column" || p.workerBuilding.type === "gatehouse" || p.workerBuilding.type === "wall_ramp" || p.workerBuilding.type === "tower") ? "stone" : "wood");
@@ -9672,6 +9976,73 @@ function updateEconomyWorkers(deltaTime, activeUnits, buildings) {
     });
     processConstructionQueue(activePeasants, keeps, e => !["house", "gatehouse", "tower", "wall_column", "wall_ramp"].includes(e.type));
     processConstructionQueue(activePeasants, keeps, e => ["gatehouse", "tower", "wall_column", "wall_ramp"].includes(e.type));
+    processRepairQueue(activePeasants, keeps);
+}
+
+function processRepairQueue(activePeasants, keeps) {
+    let idlePeasants = activePeasants.filter(p => p.faction === "red" && (p.state === "wander" || p.state === "going_home" || p.state === "idle"));
+    if (idlePeasants.length === 0) return;
+
+    const markedStructures = entities.filter(e =>
+        e.faction === "red" &&
+        e.isMarkedForRepair &&
+        !e.isDead &&
+        !e.isPlanned &&
+        !e.isUnreachable &&
+        e.health < (e.maxHealth || (BUILDING_TYPES[e.type] ? BUILDING_TYPES[e.type].maxHp : (e.maxHp || 100)))
+    );
+    if (markedStructures.length === 0) return;
+
+    const currentWorkers = new Map();
+    markedStructures.forEach(s => currentWorkers.set(s, 0));
+    activePeasants.forEach(p => {
+        if (p.faction === "red" && p.state === "repairing" && p.workerBuilding) {
+            if (currentWorkers.has(p.workerBuilding)) {
+                currentWorkers.set(p.workerBuilding, currentWorkers.get(p.workerBuilding) + 1);
+            }
+        }
+    });
+
+    function getMaxWorkers(s) {
+        const maxHp = s.maxHealth || (BUILDING_TYPES[s.type] ? BUILDING_TYPES[s.type].maxHp : (s.maxHp || 100));
+        const unitCost = s.type === "keep" ? 252 : (s.resourcesNeededTotal || (BUILDING_TYPES[s.type] ? (BUILDING_TYPES[s.type].cost || 10) : 10));
+        const hpMissing = Math.max(0, maxHp - s.health);
+        const resNeeded = (hpMissing / maxHp) * unitCost * 0.5;
+        return Math.max(1, Math.ceil(resNeeded / 20));
+    }
+
+    let assignedInPass = true;
+    while (idlePeasants.length > 0 && assignedInPass) {
+        assignedInPass = false;
+        for (let struct of markedStructures) {
+            if (idlePeasants.length === 0) break;
+            const maxW = getMaxWorkers(struct);
+            const curW = currentWorkers.get(struct) || 0;
+            if (curW < maxW) {
+                let bestDist = Infinity;
+                let bestIdx = -1;
+                for (let i = 0; i < idlePeasants.length; i++) {
+                    const p = idlePeasants[i];
+                    const dist = Math.hypot(p.x - struct.x, p.z - struct.z);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = i;
+                    }
+                }
+                if (bestIdx >= 0) {
+                    const p = idlePeasants.splice(bestIdx, 1)[0];
+                    p.state = "repairing";
+                    p.workerBuilding = struct;
+                    p.targetPosition = new THREE.Vector3(struct.x, getTerrainHeight(struct.x, struct.z), struct.z);
+                    p.path = null;
+                    p.pathCooldown = 0;
+                    p.repairFraction = 0;
+                    currentWorkers.set(struct, curW + 1);
+                    assignedInPass = true;
+                }
+            }
+        }
+    }
 }
 // Helpers
 function getHorseStats(faction) {
@@ -10941,21 +11312,58 @@ function clearWallGhosts() {
     if (tooltip) tooltip.style.display = "none";
 }
 function showBuildTab(tabKey) {
+    const tabRepair = document.getElementById("tab-repair");
+    const tabCancel = document.getElementById("tab-cancel");
+    const tabDemolish = document.getElementById("tab-demolish");
+
+    if (tabKey === "repair") {
+        isRepairMode = true;
+        isCancelMode = false;
+        wallDrawMode = null;
+        document.body.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'24\' font-size=\'24\'>🔨</text></svg>") 16 16, pointer';
+        showStatusLog("Repair mode active. Click or drag-select damaged structures.");
+        if (typeof cancelPlacement === "function") cancelPlacement();
+        clearWallGhosts();
+        document.querySelectorAll(".hud-tabs .tab-btn").forEach(b => b.classList.remove("active"));
+        if (tabRepair) tabRepair.classList.add("active");
+        return;
+    }
+    if (tabKey === "cancel") {
+        isCancelMode = true;
+        isRepairMode = false;
+        wallDrawMode = null;
+        document.body.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'24\' font-size=\'24\'>🚫</text></svg>") 16 16, not-allowed';
+        showStatusLog("Cancel mode active. Click or drag-select blueprints/repairs to cancel. Double-click Cancel to clear all.");
+        if (typeof cancelPlacement === "function") cancelPlacement();
+        clearWallGhosts();
+        document.querySelectorAll(".hud-tabs .tab-btn").forEach(b => b.classList.remove("active"));
+        if (tabCancel) tabCancel.classList.add("active");
+        return;
+    }
     if (tabKey === "demolish") {
+        isRepairMode = false;
+        isCancelMode = false;
         wallDrawMode = "delete_building";
         showStatusLog("Demolish mode active. Drag to delete any building/wall.");
         if (typeof cancelPlacement === "function") cancelPlacement();
         clearWallGhosts();
+        document.body.style.cursor = "default";
+        document.querySelectorAll(".hud-tabs .tab-btn").forEach(b => b.classList.remove("active"));
+        if (tabDemolish) tabDemolish.classList.add("active");
         return;
     }
+    isRepairMode = false;
+    isCancelMode = false;
+    document.body.style.cursor = "default";
     document.getElementById("tab-civilian").classList.remove("active");
     document.getElementById("tab-military").classList.remove("active");
     const tabWalls = document.getElementById("tab-walls");
     if (tabWalls) tabWalls.classList.remove("active");
     const tabLuxuries = document.getElementById("tab-luxuries");
     if (tabLuxuries) tabLuxuries.classList.remove("active");
-    const tabDemolish = document.getElementById("tab-demolish");
     if (tabDemolish) tabDemolish.classList.remove("active");
+    if (tabRepair) tabRepair.classList.remove("active");
+    if (tabCancel) tabCancel.classList.remove("active");
     document.getElementById("group-civilian").style.display = "none";
     document.getElementById("group-military").style.display = "none";
     const groupWalls = document.getElementById("group-walls");
@@ -11054,6 +11462,17 @@ function onMouseDown(e) {
             } else {
                 document.getElementById("drag-box").style.display = "none";
             }
+            return;
+        }
+        if (isRepairMode || isCancelMode) {
+            isRepairMode = false;
+            isCancelMode = false;
+            document.body.style.cursor = "default";
+            const tabRepair = document.getElementById("tab-repair");
+            if (tabRepair) tabRepair.classList.remove("active");
+            const tabCancel = document.getElementById("tab-cancel");
+            if (tabCancel) tabCancel.classList.remove("active");
+            showStatusLog("Repair/Cancel mode deactivated.");
             return;
         }
         if (placementMode) {
@@ -11193,6 +11612,8 @@ function onMouseDown(e) {
                     clickedEnemy = hitEnt;
                 }
             } else if (hitEnt && hitEnt.faction === "red" && hitEnt.isPlanned) {
+                clickedEnemy = hitEnt;
+            } else if (hitEnt && hitEnt.faction === "red" && !hitEnt.isPlanned && canStructureBeRepaired(hitEnt) && selectedEntities.some(e => e.type === "peasant")) {
                 clickedEnemy = hitEnt;
             } else if (hitEnt && (hitEnt.type === "gatehouse" || hitEnt.type === "keep" || hitEnt.type === "tower" || hitEnt.type === "siege_tower")) {
                 if (hitEnt.isPlanned) {
@@ -11372,6 +11793,7 @@ function onMouseMove(e) {
                 (
                     (ent.faction !== "red" && ent.faction !== "neutral" && (ent.type !== "tree" || hasKing) && ent.type !== "stone" && ent.type !== "gold" && ent.type !== "iron") ||
                     (ent.faction === "red" && ent.isPlanned && hasPeasant) ||
+                    (ent.faction === "red" && !ent.isPlanned && canStructureBeRepaired(ent) && hasPeasant) ||
                     (helpMode && ent.faction === "red")
                 )
             ).map(ent => ent.mesh);
@@ -11381,7 +11803,8 @@ function onMouseMove(e) {
                 while (root.parent && root.parent !== scene) {
                     root = root.parent;
                 }
-                const hoveredEnt = entities.find(ent => ent.mesh === root);
+                let hoveredEnt = entities.find(ent => ent.mesh === root);
+                if (hoveredEnt) hoveredEnt = getParentTowerIfTile(hoveredEnt);
                 if (hoveredEnt) {
                     if (helpMode && hoveredEnt.faction === "red") {
                         if (helpHoverIndicator) {
@@ -11392,7 +11815,7 @@ function onMouseMove(e) {
                         }
                         if (helpGroundIndicator) helpGroundIndicator.visible = false;
                         hoveringHelp = true;
-                    } else if (hoveredEnt.faction === "red" && hoveredEnt.isPlanned && hasPeasant) {
+                    } else if (hoveredEnt.faction === "red" && ((hoveredEnt.isPlanned && hasPeasant) || (!hoveredEnt.isPlanned && canStructureBeRepaired(hoveredEnt) && hasPeasant))) {
                         hoveringBlueprint = true;
                     } else if (hoveredEnt.faction !== "red" && (hoveredEnt.type !== "tree" || hasKing)) {
                         enemyTargetIndicator.position.copy(hoveredEnt.mesh.position);
@@ -11450,6 +11873,10 @@ function onMouseMove(e) {
             document.body.style.cursor = 'pointer';
         } else if (helpMode) {
             document.body.style.cursor = 'crosshair';
+        } else if (isRepairMode) {
+            document.body.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'24\' font-size=\'24\'>🔨</text></svg>") 16 16, pointer';
+        } else if (isCancelMode) {
+            document.body.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\'><text y=\'24\' font-size=\'24\'>🚫</text></svg>") 16 16, not-allowed';
         } else if (!attackGroundMode) {
             document.body.style.cursor = "default";
         }
@@ -11613,6 +12040,13 @@ function onMouseUp(e) {
                             }
                         }
                         cmd.targetEntity = null;
+                    } else if (rightDragTargetEntity.faction === "red" && !rightDragTargetEntity.isPlanned && canStructureBeRepaired(rightDragTargetEntity) && unit.type === "peasant") {
+                        cmd.state = "repairing";
+                        cmd.workerBuilding = rightDragTargetEntity;
+                        cmd.repairFraction = 0;
+                        markStructureForRepair(rightDragTargetEntity);
+                        cmd.targetPosition = new THREE.Vector3(rightDragTargetEntity.x, getTerrainHeight(rightDragTargetEntity.x, rightDragTargetEntity.z), rightDragTargetEntity.z);
+                        cmd.targetEntity = null;
                     } else if (rightDragTargetEntity.faction !== "red") {
                         if (unit.weapon === "Catapult" || unit.weapon === "Trebuchet" || unit.weapon === "Mangonel") {
                             cmd.state = "attack_ground";
@@ -11775,6 +12209,13 @@ function onMouseUp(e) {
                                 cmd.targetPosition = new THREE.Vector3(unit.x, getTerrainHeight(unit.x, unit.z), unit.z);
                             }
                         }
+                    } else if (rightDragTargetEntity.faction === "red" && !rightDragTargetEntity.isPlanned && canStructureBeRepaired(rightDragTargetEntity) && unit.type === "peasant") {
+                        cmd.state = "repairing";
+                        cmd.workerBuilding = rightDragTargetEntity;
+                        cmd.repairFraction = 0;
+                        markStructureForRepair(rightDragTargetEntity);
+                        cmd.targetPosition = new THREE.Vector3(rightDragTargetEntity.x, getTerrainHeight(rightDragTargetEntity.x, rightDragTargetEntity.z), rightDragTargetEntity.z);
+                        cmd.targetEntity = null;
                     } else if (rightDragTargetEntity.faction !== "red") {
                         if (unit.weapon === "Catapult" || unit.weapon === "Trebuchet" || unit.weapon === "Mangonel") {
                             cmd.state = "attack_ground";
@@ -11811,6 +12252,8 @@ function onMouseUp(e) {
             } else {
                 if (rightDragTargetEntity && rightDragTargetEntity.faction === "red" && rightDragTargetEntity.isPlanned) {
                     showStatusLog("Construct order issued!");
+                } else if (rightDragTargetEntity && rightDragTargetEntity.faction === "red" && !rightDragTargetEntity.isPlanned && canStructureBeRepaired(rightDragTargetEntity)) {
+                    showStatusLog("Repair order issued!");
                 } else {
                     showStatusLog(rightDragTargetEntity ? "Attack order issued!" : "Movement command issued.");
                 }
@@ -11845,6 +12288,148 @@ function onMouseUp(e) {
     const dragBox = document.getElementById("drag-box");
     dragBox.style.display = "none";
     dragEnd.set(e.clientX, e.clientY);
+    if (isRepairMode) {
+        const left = Math.min(dragStart.x, dragEnd.x);
+        const top = Math.min(dragStart.y, dragEnd.y);
+        const right = Math.max(dragStart.x, dragEnd.x);
+        const bottom = Math.max(dragStart.y, dragEnd.y);
+        const boxWidth = right - left;
+        const boxHeight = bottom - top;
+        if (boxWidth < 5 && boxHeight < 5) {
+            // Single Click
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2(
+                (dragStart.x / window.innerWidth) * 2 - 1,
+                -(dragStart.y / window.innerHeight) * 2 + 1
+            );
+            raycaster.setFromCamera(mouse, camera);
+            const checkMeshes = ((window.__activeUnits || entities).concat(window.__buildings || [])).filter(ent => ent.state !== "dead" && ent.mesh).map(ent => ent.mesh);
+            const intersects = raycaster.intersectObjects(checkMeshes, true).filter(h => !h.object.isCosmetic);
+            if (intersects.length > 0) {
+                let root = intersects[0].object;
+                while (root.parent && root.parent !== scene) {
+                    root = root.parent;
+                }
+                let clicked = entities.find(ent => ent.mesh === root);
+                if (clicked && clicked.type === "tower_tile" && clicked.parentId) {
+                    const parentTower = entities.find(e => e.id === clicked.parentId);
+                    if (parentTower) clicked = parentTower;
+                }
+                if (clicked && canStructureBeRepaired(clicked)) {
+                    markStructureForRepair(clicked);
+                    const bName = (BUILDING_TYPES[clicked.type] && BUILDING_TYPES[clicked.type].name) ? BUILDING_TYPES[clicked.type].name : clicked.type;
+                    showStatusLog(`Marked ${bName} for repair.`);
+                } else if (clicked) {
+                    showStatusLog("Structure does not need repair.");
+                }
+            }
+        } else {
+            // Drag box selection: undamaged buildings in the drag box will NOT be marked for repair
+            let markedCount = 0;
+            const seenIds = new Set();
+            const candidates = entities.filter(ent => ent.state !== "dead" && !ent.isPlanned && ent.mesh && ent.mesh.visible);
+            candidates.forEach(ent => {
+                let targetEnt = ent;
+                if (targetEnt.type === "tower_tile" && targetEnt.parentId) {
+                    const pt = entities.find(e => e.id === targetEnt.parentId);
+                    if (pt) targetEnt = pt;
+                }
+                if (seenIds.has(targetEnt.id)) return;
+                seenIds.add(targetEnt.id);
+                const tempV = new THREE.Vector3(targetEnt.x, targetEnt.y !== undefined ? targetEnt.y : getTerrainHeight(targetEnt.x, targetEnt.z), targetEnt.z);
+                tempV.project(camera);
+                const screenX = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+                const screenY = (tempV.y * -0.5 + 0.5) * window.innerHeight;
+                if (screenX >= left && screenX <= right && screenY >= top && screenY <= bottom) {
+                    if (canStructureBeRepaired(targetEnt)) {
+                        markStructureForRepair(targetEnt);
+                        markedCount++;
+                    }
+                }
+            });
+            if (markedCount > 0) {
+                showStatusLog(`Marked ${markedCount} damaged structure(s) for repair.`);
+            } else {
+                showStatusLog("No damaged structures in selection.");
+            }
+        }
+        return;
+    }
+    if (isCancelMode) {
+        const left = Math.min(dragStart.x, dragEnd.x);
+        const top = Math.min(dragStart.y, dragEnd.y);
+        const right = Math.max(dragStart.x, dragEnd.x);
+        const bottom = Math.max(dragStart.y, dragEnd.y);
+        const boxWidth = right - left;
+        const boxHeight = bottom - top;
+        if (boxWidth < 5 && boxHeight < 5) {
+            // Single Click
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2(
+                (dragStart.x / window.innerWidth) * 2 - 1,
+                -(dragStart.y / window.innerHeight) * 2 + 1
+            );
+            raycaster.setFromCamera(mouse, camera);
+            const checkMeshes = ((window.__activeUnits || entities).concat(window.__buildings || [])).filter(ent => ent.state !== "dead" && ent.mesh).map(ent => ent.mesh);
+            const intersects = raycaster.intersectObjects(checkMeshes, true).filter(h => !h.object.isCosmetic);
+            if (intersects.length > 0) {
+                let root = intersects[0].object;
+                while (root.parent && root.parent !== scene) {
+                    root = root.parent;
+                }
+                let clicked = entities.find(ent => ent.mesh === root);
+                if (clicked && clicked.type === "tower_tile" && clicked.parentId) {
+                    const parentTower = entities.find(e => e.id === clicked.parentId);
+                    if (parentTower) clicked = parentTower;
+                }
+                if (clicked) {
+                    if (clicked.isPlanned && clicked.faction === "red") {
+                        window.cancelPlannedBuilding(clicked.id);
+                        showStatusLog("Blueprint canceled.");
+                    } else if (clicked.isMarkedForRepair) {
+                        unmarkStructureForRepair(clicked);
+                        showStatusLog("Repair command canceled.");
+                    } else {
+                        showStatusLog("No active blueprint or repair order on this structure.");
+                    }
+                }
+            }
+        } else {
+            // Drag box selection: cancel blueprints and repair orders inside box
+            let bpCanceled = 0;
+            let repCanceled = 0;
+            const seenIds = new Set();
+            const candidates = entities.filter(ent => ent.state !== "dead" && ent.mesh && ent.mesh.visible);
+            candidates.forEach(ent => {
+                let targetEnt = ent;
+                if (targetEnt.type === "tower_tile" && targetEnt.parentId) {
+                    const pt = entities.find(e => e.id === targetEnt.parentId);
+                    if (pt) targetEnt = pt;
+                }
+                if (seenIds.has(targetEnt.id)) return;
+                seenIds.add(targetEnt.id);
+                const tempV = new THREE.Vector3(targetEnt.x, targetEnt.y !== undefined ? targetEnt.y : getTerrainHeight(targetEnt.x, targetEnt.z), targetEnt.z);
+                tempV.project(camera);
+                const screenX = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+                const screenY = (tempV.y * -0.5 + 0.5) * window.innerHeight;
+                if (screenX >= left && screenX <= right && screenY >= top && screenY <= bottom) {
+                    if (targetEnt.isPlanned && targetEnt.faction === "red") {
+                        window.cancelPlannedBuilding(targetEnt.id);
+                        bpCanceled++;
+                    } else if (targetEnt.isMarkedForRepair) {
+                        unmarkStructureForRepair(targetEnt);
+                        repCanceled++;
+                    }
+                }
+            });
+            if (bpCanceled > 0 || repCanceled > 0) {
+                showStatusLog(`Canceled ${bpCanceled} blueprint(s) and ${repCanceled} repair order(s).`);
+            } else {
+                showStatusLog("No blueprints or repair orders in selection.");
+            }
+        }
+        return;
+    }
     if (!e.shiftKey) {
         selectedEntities.forEach(ent => {
             if (ent.selectionRing) ent.selectionRing.visible = false;
@@ -11867,8 +12452,10 @@ function onMouseUp(e) {
             while (root.parent && root.parent !== scene) {
                 root = root.parent;
             }
-            const clicked = entities.find(ent => ent.mesh === root);
+            let clicked = entities.find(ent => ent.mesh === root);
+            if (clicked) clicked = getParentTowerIfTile(clicked);
             if (clicked) {
+                ensureSelectionRing(clicked);
                 const now = performance.now();
                 const isDoubleClick = (clicked === window.lastClickedEntity && (now - window.lastClickTime < 300));
                 window.lastClickedEntity = clicked;
@@ -11893,12 +12480,14 @@ function onMouseUp(e) {
                     onScreen.forEach(ent => {
                         if (!selectedEntities.includes(ent)) {
                             selectedEntities.push(ent);
+                            ensureSelectionRing(ent);
                             if (ent.selectionRing) ent.selectionRing.visible = true;
                         }
                     });
                 } else if (e.shiftKey) {
                     if (!selectedEntities.includes(clicked)) {
                         selectedEntities.push(clicked);
+                        ensureSelectionRing(clicked);
                         if (clicked.selectionRing) clicked.selectionRing.visible = true;
                     } else {
                         selectedEntities = selectedEntities.filter(ent => ent !== clicked);
@@ -11909,6 +12498,7 @@ function onMouseUp(e) {
                         if (ent.selectionRing) ent.selectionRing.visible = false;
                     });
                     selectedEntities = [clicked];
+                    ensureSelectionRing(clicked);
                     if (clicked.selectionRing) clicked.selectionRing.visible = true;
                 }
             } else {
@@ -11980,7 +12570,15 @@ function onMouseWheel(e) {
     }
 }
 function onKeyDown(e) {
-        if (e.code === "KeyX" && !keysPressed["KeyX"]) {
+    if ((e.ctrlKey || e.metaKey) && (e.code === "KeyZ" || e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        if (!keysPressed["KeyZ"]) {
+            undoLastBlueprint();
+        }
+        keysPressed["KeyZ"] = true;
+        return;
+    }
+    if (e.code === "KeyX" && !keysPressed["KeyX"]) {
         let stoppedCount = 0;
         selectedEntities.forEach(ent => {
             if (ent.faction === "red" && (ent.baseSpeed > 0 || ent.type === "peasant") && ent.state !== "dead") {
@@ -12841,6 +13439,10 @@ function resetAggro() {
 }
 window.applyZzzTint = function(b, isZzz) {
     if (!b || !b.mesh) return;
+    const fortTypes = ["keep", "wall_column", "barracks", "tower", "tower_tile", "wall_ramp"];
+    if ((fortTypes.includes(b.type) || b.isRamp) && b.type !== "gatehouse") {
+        return;
+    }
     b.mesh.traverse(c => {
         if (c.isMesh && c.material) {
             if (isZzz) {
@@ -12869,6 +13471,7 @@ function releaseWorkerFromBuilding(p, b) {
     p.trainingConfig = null;
     p.workTimer = 0;
     p.cooldownTimer = 0;
+    p.repairFraction = 0;
     p.visible = true;
     if (p.mesh) {
         p.mesh.visible = true;
@@ -12912,8 +13515,11 @@ function releaseWorkerFromBuilding(p, b) {
 window.abortWorkerWithZzz = function(unit, entities) {
     if (unit.workerBuilding && !unit.workerBuilding.isZzz) {
         const b = unit.workerBuilding;
-        b.isZzz = true;
-        if (window.applyZzzTint) window.applyZzzTint(b, true);
+        const excludeTypes = ["keep", "wall_column", "gatehouse", "barracks", "tower", "tower_tile", "wall_ramp"];
+        if (!excludeTypes.includes(b.type) && !b.isRamp) {
+            b.isZzz = true;
+            if (window.applyZzzTint) window.applyZzzTint(b, true);
+        }
         const activePeasants = entities.filter(e => e.type === "peasant");
         activePeasants.forEach(p => {
             if (p.workerBuilding === b || p.targetSiegeShop === b) {
@@ -12939,7 +13545,8 @@ window.toggleZzz = function() {
     let mixedZzz = false;
     let anyOn = false;
     let anyOff = false;
-    const validBuildings = selectedEntities.filter(ent => ent.faction === "red" && !!BUILDING_TYPES[ent.type] && !["keep", "wall_column", "gatehouse", "barracks"].includes(ent.type));
+    const excludeTypes = ["keep", "wall_column", "gatehouse", "barracks", "tower", "tower_tile", "wall_ramp"];
+    const validBuildings = selectedEntities.filter(ent => ent.faction === "red" && !!BUILDING_TYPES[ent.type] && !excludeTypes.includes(ent.type) && !ent.isRamp);
     if (validBuildings.length === 0) return;
     validBuildings.forEach(ent => {
         if (ent.isZzz) anyOff = true;
@@ -13029,6 +13636,13 @@ function getWeaponSVG(w) {
     return WEAPON_SVGS[w] || `<svg class="weapon-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#cfd8dc" stroke="#90a4ae" stroke-width="1"/></svg>`;
 }
 function updateSelectionHUD() {
+    if (selectedEntities.length > 0) {
+        selectedEntities = selectedEntities.map(ent => getParentTowerIfTile(ent)).filter((ent, idx, arr) => arr.indexOf(ent) === idx);
+        selectedEntities.forEach(ent => {
+            ensureSelectionRing(ent);
+            if (ent && ent.selectionRing) ent.selectionRing.visible = true;
+        });
+    }
     const bldgFinePrint = document.getElementById("building-drag-fine-print");
     const btnAttackGround = document.getElementById("btn-attack-ground");
     if (btnAttackGround) {
@@ -13627,13 +14241,17 @@ function updateSelectionHUD() {
     }
         if (zzzControls && zzzBtn) {
         if (selectedEntities.length > 0 && selectedEntities[0].faction === "red" && selectedEntities[0].type !== "peasant" && selectedEntities[0].type !== "soldier" && selectedEntities[0].type !== "king" && !selectedEntities[0].type.startsWith("siege_") && selectedEntities[0].type !== "logistics_wagon") {
-            // Exclude keeps, wall columns, gatehouses, barracks
-            const excludeTypes = ["keep", "wall_column", "gatehouse", "barracks"];
+            // Exclude keeps, wall columns, gatehouses, barracks, towers, ramps
+            const excludeTypes = ["keep", "wall_column", "gatehouse", "barracks", "tower", "tower_tile", "wall_ramp"];
             let hasValidBuilding = false;
             let zzzOnCount = 0;
             let zzzOffCount = 0;
             selectedEntities.forEach(ent => {
-                if (!excludeTypes.includes(ent.type) && !!BUILDING_TYPES[ent.type]) {
+                if (ent.isZzz && (excludeTypes.includes(ent.type) || ent.isRamp) && ent.type !== "gatehouse") {
+                    ent.isZzz = false;
+                    if (window.applyZzzTint) window.applyZzzTint(ent, false);
+                }
+                if (!excludeTypes.includes(ent.type) && !ent.isRamp && !!BUILDING_TYPES[ent.type]) {
                     hasValidBuilding = true;
                     if (ent.isZzz) zzzOnCount++;
                     else zzzOffCount++;
@@ -13728,6 +14346,10 @@ function updateSelectionHUD() {
             }
             let displayState = first.state.toUpperCase();
             if (first.type === "peasant" && first.state === "wander") displayState = "IDLE";
+            if (first.type === "peasant" && first.state === "repairing") {
+                const bType = first.workerBuilding ? (BUILDING_TYPES[first.workerBuilding.type]?.name || first.workerBuilding.type).toUpperCase() : "STRUCTURE";
+                displayState = `REPAIRING (${bType})`;
+            }
             detailsHtml += `<div class="stat-row"><span>Current Action:</span><span>${displayState}</span></div>`;
             if (first.isWagon && first.wagon) {
                 const totalWagonGoods = Object.values(first.wagon).reduce((sum, val) => sum + val, 0);
@@ -13758,16 +14380,16 @@ function updateSelectionHUD() {
                 `;
             }
         } else {
-            const mat = first.material || (["wall_column", "wall_ramp", "gatehouse"].includes(first.type) ? "stone" : "wood");
+            const mat = first.material || (["wall_column", "wall_ramp", "gatehouse", "tower"].includes(first.type) ? "stone" : "wood");
             detailsHtml += `
                 <div class="stat-row"><span>Armor Value:</span><span>🛡️ ${first.armor || 0}</span></div>
                 <div class="stat-row"><span>Material:</span><span style="text-transform: capitalize;">${mat}</span></div>
             `;
-            if (first.type === "wall_column" || first.type === "wall_ramp" || first.type === "gatehouse") {
+            if (first.type === "wall_column" || first.type === "wall_ramp" || first.type === "gatehouse" || first.type === "tower") {
                 const isDamaged = first.originalHeight && first.blocks && first.blocks.length < first.originalHeight;
-                const actualH = (first.type === "wall_column" && first.blocks) ? first.blocks.length : (first.exactHeight !== undefined ? first.exactHeight.toFixed(1) : first.height);
+                const actualH = (first.type === "wall_column" && first.blocks) ? first.blocks.length : (first.exactHeight !== undefined ? first.exactHeight.toFixed(1) : (first.height || first.dimY || 20));
                 detailsHtml += `
-                    <div class="stat-row"><span>Wall Height:</span><span>${actualH} m${isDamaged ? ' (Damaged)' : ''}</span></div>
+                    <div class="stat-row"><span>${first.type === "tower" ? "Tower" : "Wall"} Height:</span><span>${actualH} m${isDamaged ? ' (Damaged)' : ''}</span></div>
                 `;
             }
             if (first.type === "gatehouse" || first.type === "keep") {
@@ -13883,6 +14505,21 @@ function updateSelectionHUD() {
                     <button class="wood-btn-gold" style="background:#b71c1c; color:white; border-color:#5d4037;" onmousedown="cancelPlannedBuilding(${first.id})">Cancel Construction</button>
                 </div>
             `;
+        }
+        if (!first.isPlanned && first.faction === "red" && canStructureBeRepaired(first)) {
+            if (first.isMarkedForRepair) {
+                detailsHtml += `
+                    <div style="margin-top:10px;">
+                        <button class="wood-btn-gold" style="width:100%; padding:8px; background:#e65100; color:white; border-color:#5d4037; font-weight:bold;" onmousedown="unmarkStructureForRepair(entities.find(e => e.id === ${first.id})); updateSelectionHUD();">CANCEL REPAIR (🔨)</button>
+                    </div>
+                `;
+            } else {
+                detailsHtml += `
+                    <div style="margin-top:10px;">
+                        <button class="wood-btn-gold" style="width:100%; padding:8px; background:#2e7d32; color:white; border-color:#5d4037; font-weight:bold;" onmousedown="markStructureForRepair(entities.find(e => e.id === ${first.id})); updateSelectionHUD();">MARK FOR REPAIR (🔨)</button>
+                    </div>
+                `;
+            }
         }
         if (first.type !== "peasant" && !BUILDING_TYPES[first.type] && first.faction === "red" && first.type !== "king") {
             detailsHtml += `
@@ -15139,7 +15776,8 @@ function dealDamage(attacker, victim, amount) {
         victim.disguiseTimer = 10;
     }
     // Spy Sabotage
-    if (attacker && attacker.weapon === "Spy" && victim.maxHp && victim.type !== "soldier" && victim.type !== "peasant" && victim.type !== "king") {
+    const excludeSabotage = ["keep", "wall_column", "gatehouse", "barracks", "tower", "tower_tile", "wall_ramp"];
+    if (attacker && attacker.weapon === "Spy" && victim.maxHp && victim.type !== "soldier" && victim.type !== "peasant" && victim.type !== "king" && !excludeSabotage.includes(victim.type) && !victim.isRamp) {
         if (!victim.isZzz) {
             victim.isZzz = true;
             if (window.applyZzzTint) window.applyZzzTint(victim, true);
@@ -15154,7 +15792,9 @@ function dealDamage(attacker, victim, amount) {
     const finalDamage = Math.max(amount - victim.armor, 0);
     victim.health = Math.max(victim.health - finalDamage, 0);
     if (finalDamage > 0) victim.healCooldown = 10.0;
-    spawnFloatingText("-" + finalDamage + " HP", victim.x, victim.y + (victim.height || 1) + 0.5, victim.z, attacker.faction === "red" ? 0xd32f2f : 0x1976d2);
+    if (showDamageIndicators) {
+        spawnFloatingText("-" + finalDamage + " HP", victim.x, victim.y + (victim.height || 1) + 0.5, victim.z, attacker.faction === "red" ? 0xd32f2f : 0x1976d2);
+    }
     if (victim.type === "wall_column" && victim.blocks) {
         const expectedBlocks = Math.ceil(victim.health / 100);
         if (expectedBlocks < victim.blocks.length && expectedBlocks > 0) {
@@ -15190,6 +15830,11 @@ function triggerDeath(victim, killer) {
     victim.targetPosition = null;
     victim.path = null;
     refundBlueprintResources(victim);
+    if (victim.repairMarker) {
+        if (typeof scene !== "undefined" && scene) scene.remove(victim.repairMarker);
+        victim.repairMarker = null;
+    }
+    victim.isMarkedForRepair = false;
     victim.isDead = true;
     if (victim.type === "peasant") {
         if (victim.isWagon && victim.originLoadhouse) {
